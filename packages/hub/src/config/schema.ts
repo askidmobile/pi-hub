@@ -57,8 +57,12 @@ export const HubConfig = z
         max_workers_hub: z.number().int().positive().default(2),
         max_workers_project: z.number().int().positive().default(2),
         max_workers_session: z.number().int().positive().default(2),
-        max_task_minutes: z.number().int().positive().default(60),
-        max_task_usd: z.number().positive().default(2),
+        /**
+         * Optional per-task ceilings, off by default (stage 2 D-105, BD-021): the user chose
+         * to delegate and the work should be finished. Set them to stop a runaway worker.
+         */
+        max_task_minutes: z.number().int().positive().optional(),
+        max_task_usd: z.number().positive().optional(),
       })
       .prefault({}),
     clients: z.partialRecord(z.enum(["claude-code", "codex", "mcp"]), ClientRule).default({}),
@@ -115,11 +119,13 @@ export const ProjectConfig = z.object({
   daily_budget_usd: z.number().positive().optional(),
   /** Runs in a fresh worktree before the worker starts (spec FR-024). */
   setup: z.string().min(1).optional(),
+  /** Quality gate commands, run whole in the task worktree (stage 2 FR-111, D-109). */
   quality: z
     .object({
-      test: z.string().optional(),
-      lint: z.string().optional(),
-      typecheck: z.string().optional(),
+      test: z.string().min(1).optional(),
+      lint: z.string().min(1).optional(),
+      typecheck: z.string().min(1).optional(),
+      timeout_minutes: z.number().int().positive().default(15),
     })
     .optional(),
 });

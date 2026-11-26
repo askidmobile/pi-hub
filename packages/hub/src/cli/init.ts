@@ -53,7 +53,7 @@ export function renderConfig(answers: InitAnswers): string {
     delegation_default: "off",
     allowed_repos: answers.allowedRepos,
     pi: { version: PINNED_PI_VERSION, bin: answers.piBin ?? "pi" },
-    limits: { max_workers_hub: 2, max_task_minutes: 60, max_task_usd: 2 },
+    limits: { max_workers_hub: 2 },
     roles: { code: { model: answers.model } },
     default_role: "code",
     router: { smart: false },
@@ -62,6 +62,7 @@ export function renderConfig(answers: InitAnswers): string {
     "# pi-hub config, written by `pi-hub init`. Reference: config/hub.example.yaml.",
     "# model = <pi provider>/<model id> as in Pi's catalog. Provider keys live in .env.",
     "# The smart router (System One) is configured in stage 3.",
+    "# Per-task ceilings are off: add limits.max_task_usd / max_task_minutes to stop runaway workers.",
     stringify(config),
   ].join("\n");
 }

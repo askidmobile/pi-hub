@@ -33,6 +33,8 @@ describe("result envelope size", () => {
       attempt: 1,
       started_at: "2026-11-26T10:00:01.000Z",
       base_commit: "0123456789abcdef0123456789abcdef01234567",
+      quality_issues_json: "[]",
+      quality_log_path: null,
     };
     const files = Array.from({ length: 20 }, (_, i) => `packages/app/src/feature/module-${i}.ts`);
     const env = buildEnvelope({

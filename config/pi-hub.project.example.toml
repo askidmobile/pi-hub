@@ -8,3 +8,5 @@ setup = "pnpm install --frozen-lockfile"
 test = "pnpm test"
 lint = "pnpm lint"
 typecheck = "pnpm typecheck"
+# Each command is stopped after this many minutes (with its child processes).
+timeout_minutes = 15

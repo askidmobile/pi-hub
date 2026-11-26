@@ -54,6 +54,61 @@ describe("migrations", () => {
     expect(b).toBeUndefined();
   });
 
+  it("migrates a stage 1 database (schema 3) without losing steps", () => {
+    const file = join(dir.path, "hub.db");
+    const stage1 = join(dir.path, "m1");
+    mkdirSync(stage1);
+    for (const m of listMigrations().filter((x) => x.version <= 3))
+      writeFileSync(join(stage1, m.name), m.sql);
+    const db = openDatabase(file);
+    migrate(db, stage1);
+    const repos = new Repos(db);
+    const p = repos.upsertProject("/repo/a", null);
+    const s = repos.createSession({ client: "mcp", parent_pid: 1, project_id: p.id, mode: "on" });
+    const t = repos.insertTask({
+      owner_session_id: s.id,
+      project_id: p.id,
+      task_text: "x",
+      base_branch: "main",
+      role: null,
+      model: "fake/success",
+      routed_by: "rules",
+      route_reason: "r",
+    });
+    db.prepare(
+      `INSERT INTO steps (task_id, seq, model, provider, cost, cost_source, created_at)
+       VALUES (?, 1, 'm', 'p', 0.25, 'pi_event', '2026-11-26T00:00:00Z')`,
+    ).run(t.id);
+    expect(migrate(db)).toEqual([4]);
+    const step = db.prepare("SELECT * FROM steps WHERE task_id = ?").get(t.id) as {
+      cost: number;
+      cost_source: string;
+      price_json: string | null;
+    };
+    expect(step).toMatchObject({ cost: 0.25, cost_source: "pi_event", price_json: null });
+    expect(repos.taskUsage(t.id).cost).toBeCloseTo(0.25);
+    // The new cost source is accepted, an unknown one still is not.
+    repos.insertStep({
+      task_id: t.id,
+      model: "m",
+      provider: "p",
+      input_tokens: 10,
+      output_tokens: 1,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      cost: 0,
+      cost_source: "unknown",
+    });
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO steps (task_id, seq, model, provider, cost_source, created_at) VALUES (?, 9, 'm', 'p', 'guess', 'x')",
+        )
+        .run(t.id),
+    ).toThrow();
+    db.close();
+  });
+
   it("rejects duplicate migration versions", () => {
     const mdir = join(dir.path, "dup");
     mkdirSync(mdir);
@@ -162,6 +217,116 @@ describe("repos", () => {
       seq: number;
     }[];
     expect(seqs.map((s) => s.seq)).toEqual([1, 2]);
+  });
+
+  it("records questions: rounds, one open at a time, answer, close, per-session view", () => {
+    const { project, session } = seed();
+    const t = repos.insertTask(newTask(session.id, project.id));
+    const q1 = repos.insertQuestion({
+      task_id: t.id,
+      kind: "question",
+      text: "Redis or a table?",
+      options: ["A: Redis", "B: table"],
+      pi_dialog_id: "d1",
+      resume_status: "running",
+    });
+    expect(q1).toMatchObject({ id: `q_${t.id}_1`, round: 1, pi_dialog_id: "d1" });
+    expect(JSON.parse(q1.options_json ?? "[]")).toEqual(["A: Redis", "B: table"]);
+    expect(repos.openQuestion(t.id)?.id).toBe(q1.id);
+    expect(repos.openQuestionsForSession(session.id).map((q) => q.id)).toEqual([q1.id]);
+
+    repos.markHookDelivered(q1.id);
+    const delivered = repos.getQuestion(q1.id)?.hook_delivered_at;
+    expect(delivered).toBeTruthy();
+    repos.markHookDelivered(q1.id); // first delivery time is kept
+    expect(repos.getQuestion(q1.id)?.hook_delivered_at).toBe(delivered);
+
+    repos.answerQuestion(q1.id, "B, with TTL", "senior");
+    expect(repos.openQuestion(t.id)).toBeUndefined();
+    repos.answerQuestion(q1.id, "late", "senior"); // an answered question is not overwritten
+    expect(repos.getQuestion(q1.id)?.answer).toBe("B, with TTL");
+
+    const q2 = repos.insertQuestion({
+      task_id: t.id,
+      kind: "text",
+      text: "Which port?",
+      resume_status: "running",
+    });
+    expect(q2.round).toBe(2);
+    expect(q2.options_json).toBeNull();
+    repos.closeQuestion(q2.id);
+    expect(repos.openQuestion(t.id)).toBeUndefined();
+    expect(repos.countQuestions(t.id)).toEqual({ asked: 2, answered: 1 });
+
+    const other = repos.createSession({
+      client: "claude-code",
+      parent_pid: 5151,
+      project_id: project.id,
+      mode: "on",
+    });
+    repos.insertQuestion({ task_id: t.id, kind: "plan", text: "plan", resume_status: "planning" });
+    expect(repos.openQuestionsForSession(other.id)).toEqual([]);
+    expect(() =>
+      repos.insertQuestion({
+        task_id: t.id,
+        kind: "bogus" as never,
+        text: "x",
+        resume_status: "running",
+      }),
+    ).toThrow();
+  });
+
+  it("finds sessions by parent pid and by project", () => {
+    const { project, session } = seed();
+    const codex = repos.createSession({
+      client: "codex",
+      parent_pid: 777,
+      project_id: project.id,
+      mode: "on",
+    });
+    expect(repos.sessionsByParentPids([1, 4242]).map((s) => s.id)).toEqual([session.id]);
+    expect(repos.sessionsByParentPids([777], "claude-code")).toEqual([]);
+    expect(repos.sessionsByParentPids([])).toEqual([]);
+    expect(repos.sessionsForProject(project.id, "claude-code").map((s) => s.id)).toEqual([
+      session.id,
+    ]);
+    expect(
+      repos
+        .sessionsForProject(project.id)
+        .map((s) => s.id)
+        .sort(),
+    ).toEqual([session.id, codex.id].sort());
+  });
+
+  it("stores quality baselines per project, commit and command", () => {
+    const { project } = seed();
+    repos.putBaseline({
+      project_id: project.id,
+      base_commit: "abc",
+      command: "test",
+      exit_code: 1,
+      timed_out: 0,
+    });
+    repos.putBaseline({
+      project_id: project.id,
+      base_commit: "abc",
+      command: "test",
+      exit_code: 0,
+      timed_out: 0,
+    });
+    repos.putBaseline({
+      project_id: project.id,
+      base_commit: "abc",
+      command: "lint",
+      exit_code: null,
+      timed_out: 1,
+    });
+    const rows = repos.getBaseline(project.id, "abc");
+    expect(rows.map((r) => [r.command, r.exit_code, r.timed_out]).sort()).toEqual([
+      ["lint", null, 1],
+      ["test", 0, 0],
+    ]);
+    expect(repos.getBaseline(project.id, "other")).toEqual([]);
   });
 
   it("enforces foreign keys", () => {

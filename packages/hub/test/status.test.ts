@@ -18,9 +18,9 @@ describe("task status machine", () => {
     expect(TRANSITIONS.failed).toContain("running");
   });
 
-  it("done and cancelled are final", () => {
-    expect(TRANSITIONS.done).toEqual([]);
+  it("cancelled is final; done reopens only for rework via send (stage 2 D-102)", () => {
     expect(TRANSITIONS.cancelled).toEqual([]);
+    expect(TRANSITIONS.done).toEqual(["running"]);
     expect(TERMINAL_STATUSES.has("done")).toBe(true);
   });
 });

@@ -23,6 +23,7 @@ export function buildEnvelope(input: {
   usage: UsageTotals;
   sessionTotalUsd: number;
   changedFiles: string[];
+  questions?: { asked: number; answered: number };
 }): ResultEnvelope {
   const { task, usage } = input;
   const warnings = parseJsonList(task.warnings_json);
@@ -34,7 +35,11 @@ export function buildEnvelope(input: {
     assumptions: parseJsonList(task.assumptions_json),
     branch: task.branch ?? "",
     changed_files: capFiles(input.changedFiles),
-    quality: { status: task.quality_status ?? "SKIPPED", issues: [] },
+    quality: {
+      status: task.quality_status ?? "SKIPPED",
+      issues: parseJsonList(task.quality_issues_json),
+      ...(task.quality_log_path ? { log_path: task.quality_log_path } : {}),
+    },
     usage: {
       cost_usd: round(usage.cost, 4),
       input: totalInput(usage),
@@ -45,6 +50,8 @@ export function buildEnvelope(input: {
     session_total_usd: round(input.sessionTotalUsd, 4),
     log_path: task.log_path ?? "",
     warnings,
+    attempt: task.attempt,
+    questions: input.questions ?? { asked: 0, answered: 0 },
   };
 }
 

@@ -17,6 +17,8 @@ export interface HubPaths {
   worktreesDir: string;
   sessionsDir: string;
   promptsDir: string;
+  /** Manual model prices, USD per 1M tokens (stage 2 FR-116, plan PD-109). */
+  prices: string;
   /** PI_CODING_AGENT_DIR for workers (ADR-0011): hub-owned Pi config, never ~/.pi/agent. */
   piAgentDir: string;
 }
@@ -52,6 +54,7 @@ export function resolveHubPaths(
     worktreesDir: join(home, "worktrees"),
     sessionsDir: join(home, "sessions"),
     promptsDir: join(home, "prompts"),
+    prices: join(home, "prices.yaml"),
     piAgentDir: join(home, "pi-agent"),
   };
 }

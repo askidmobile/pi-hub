@@ -15,8 +15,9 @@ limits:
   max_workers_hub: 4
   max_workers_project: 2
   max_workers_session: 2
-  max_task_minutes: 60 # FR-021
-  max_task_usd: 2.0 # FR-025, hard stop per task
+  # Per-task ceilings are off by default (BD-021): uncomment to stop a runaway worker.
+  # max_task_minutes: 60
+  # max_task_usd: 2.0
 clients: # ADR-0006, ADR-0010
   claude-code: { tool_list: dynamic, max_wait_sec: 1500, progress_every_sec: 60 }
   codex: { tool_list: static, max_wait_sec: 870, delegation_on_connect: true }

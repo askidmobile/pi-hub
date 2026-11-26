@@ -161,6 +161,7 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       usage: this.deps.accounting.usage(task.id),
       sessionTotalUsd: this.deps.accounting.sessionTotal(sessionId),
       changedFiles: changed,
+      questions: this.deps.repos.countQuestions(task.id),
     });
   }
 

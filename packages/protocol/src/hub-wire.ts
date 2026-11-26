@@ -27,12 +27,29 @@ export interface HelloReject {
   message: string;
 }
 
-/** Fast endpoint for turn-end hooks; must answer in < 100 ms. */
-export interface PendingQuestionsQuery {
-  type: "pending_questions";
-  client_session_id?: string;
-  parent_pid: number;
-}
+/**
+ * One-shot request of a client hook (`pi-hub-shim hook stop`), sent instead of `Hello` as the
+ * first line; the hub answers one `HookReply` line and closes the connection (stage 2 FR-108).
+ * The hub maps `pid` to a senior session through the process ancestry (plan PD-107, PD-110).
+ */
+export const HookQuerySchema = z.object({
+  type: z.literal("hook_query"),
+  protocol_version: z.string(),
+  event: z.literal("stop"),
+  client: z.enum(["claude-code", "codex", "mcp"]),
+  pid: z.number().int(),
+  cwd: z.string(),
+  stop_hook_active: z.boolean().optional(),
+});
+export type HookQuery = z.infer<typeof HookQuerySchema>;
+
+/** `reason` is shown to the senior when `block` is true. */
+export const HookReplySchema = z.object({
+  type: z.literal("hook_reply"),
+  block: z.boolean(),
+  reason: z.string().max(1024).optional(),
+});
+export type HookReply = z.infer<typeof HookReplySchema>;
 
 /** Runtime validation of the first line a shim sends. */
 export const HelloSchema = z.object({

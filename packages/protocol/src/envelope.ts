@@ -16,12 +16,15 @@ export interface ResultEnvelope {
   assumptions: string[];
   branch: string;
   changed_files: string[];
-  quality: { status: QualityStatus; issues: string[] };
+  quality: QualityResult;
   usage: UsageSummary;
   session_total_usd: number;
   log_path: string;
   /** Hub-detected problems the senior must see: empty diff, AI attribution in commits, stale base, ... */
   warnings: string[];
+  /** Rework round: 1 for the first run, +1 for every `send` on a finished task. */
+  attempt: number;
+  questions: { asked: number; answered: number };
 }
 
 /** One row of `status`: enough to decide what to wait for, nothing more. */
@@ -36,8 +39,27 @@ export interface TaskSummaryRow {
   created_at: string;
 }
 
-/** Appended to every tool response for the owning session. */
+export interface QualityResult {
+  status: QualityStatus;
+  /** At most 10 lines of at most 200 characters, each naming its command. */
+  issues: string[];
+  /** Full output of the checks; present when they ran. */
+  log_path?: string;
+}
+
+/** How a question reached the hub: `ask` tool, the plan of a `clarify` task, or a question in the final text. */
+export type QuestionKind = "question" | "plan" | "text";
+
+/** An open worker question as the senior sees it (`wait`, `send`). */
+export interface OpenQuestion {
+  task_id: string;
+  round: number;
+  kind: QuestionKind;
+  question: string;
+  options?: string[];
+}
+
+/** Appended to every tool response for the owning session (stage 2 spec FR-107). No budgets (BD-021). */
 export interface ResponseFooter {
   pending_questions?: { task_id: string; count: number }[];
-  budget_warning?: { scope: "project" | "session"; used_share: number };
 }

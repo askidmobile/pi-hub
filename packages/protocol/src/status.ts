@@ -12,6 +12,7 @@ export const TASK_STATUSES = [
 ] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
+/** Statuses where no worker is active; `done` and `failed` can still be reopened by `send`. */
 export const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set(["done", "failed", "cancelled"]);
 
 /** Allowed transitions; the session manager rejects anything else. */
@@ -21,7 +22,9 @@ export const TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = 
   running: ["needs_input", "checking", "failed", "cancelled", "interrupted", "orphaned"],
   needs_input: ["planning", "running", "cancelled", "orphaned"],
   checking: ["done", "failed", "running", "interrupted"],
-  done: [],
+  // done = ready to merge, not irreversible: `send` reopens it for rework in the same Pi
+  // session (stage 2 spec D-102).
+  done: ["running"],
   failed: ["queued", "running"], // queued: escalation creates a new run; running: `send` continues the same Pi session (spec D-007)
   cancelled: [],
   interrupted: ["running", "cancelled"],

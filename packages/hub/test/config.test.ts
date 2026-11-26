@@ -40,7 +40,9 @@ describe("hub config", () => {
     const c = loadHubConfig(join(dir.path, "nope.yaml"));
     expect(c.delegation_default).toBe("off");
     expect(c.limits.max_workers_hub).toBe(2);
-    expect(c.limits.max_task_usd).toBe(2);
+    // Per-task ceilings are off unless the user sets them (stage 2 D-105).
+    expect(c.limits.max_task_usd).toBeUndefined();
+    expect(c.limits.max_task_minutes).toBeUndefined();
     expect(c.pi.version).toBe(PINNED_PI_VERSION);
     expect(CLIENT_DEFAULTS["claude-code"].max_wait_sec).toBe(1500);
   });
@@ -60,7 +62,7 @@ describe("hub config", () => {
     const c = loadHubConfig(f);
     expect(c.allowed_repos).toEqual([join(homedir(), "work/a")]);
     expect(c.limits.max_workers_hub).toBe(3);
-    expect(c.limits.max_task_minutes).toBe(60);
+    expect(c.limits.max_task_minutes).toBeUndefined();
     expect(c.roles.code?.model).toBe("deepseek/deepseek-flash");
   });
 
@@ -106,6 +108,13 @@ describe("project config", () => {
     });
     writeFileSync(join(dir.path, ".pi-hub.toml"), 'delegation = "maybe"\n');
     expect(() => loadProjectConfig(dir.path)).toThrow(/delegation/);
+  });
+
+  it("quality commands: timeout defaults to 15 minutes, empty commands are rejected", () => {
+    writeFileSync(join(dir.path, ".pi-hub.toml"), '[quality]\ntest = "pnpm test"\n');
+    expect(loadProjectConfig(dir.path).quality).toEqual({ test: "pnpm test", timeout_minutes: 15 });
+    writeFileSync(join(dir.path, ".pi-hub.toml"), '[quality]\nlint = ""\n');
+    expect(() => loadProjectConfig(dir.path)).toThrow(/lint/);
   });
 });
 

@@ -182,10 +182,9 @@ export class WorkerRun {
       client.on("event", (e) => {
         if (e.kind === "assistant_message") {
           const total = deps.accounting.record(task.id, e.message);
-          if (total !== null && total > deps.config.limits.max_task_usd) {
-            this.stopFor(
-              `лимит стоимости ${deps.config.limits.max_task_usd} $ превышен (${total.toFixed(3)} $)`,
-            );
+          const maxUsd = deps.config.limits.max_task_usd;
+          if (maxUsd !== undefined && total !== null && total > maxUsd) {
+            this.stopFor(`лимит стоимости ${maxUsd} $ превышен (${total.toFixed(3)} $)`);
           }
         } else if (e.kind === "tool_start" && e.record.toolName === REPORT_ASSUMPTION_TOOL) {
           const text = (e.record.args as { text?: unknown } | undefined)?.text;
@@ -209,11 +208,14 @@ export class WorkerRun {
             : `${task.task_text}\n\n${this.mode.message}`;
       const settled = client.waitSettled();
       await client.prompt(message);
-      const timeLimit = deps.timing?.timeLimitMs ?? deps.config.limits.max_task_minutes * 60_000;
-      this.timer = setTimeout(
-        () => this.stopFor(`превышено время задачи (${Math.round(timeLimit / 60_000)} мин)`),
-        timeLimit,
-      );
+      const maxMinutes = deps.config.limits.max_task_minutes;
+      const timeLimit = deps.timing?.timeLimitMs ?? (maxMinutes ? maxMinutes * 60_000 : undefined);
+      if (timeLimit !== undefined) {
+        this.timer = setTimeout(
+          () => this.stopFor(`превышено время задачи (${Math.round(timeLimit / 60_000)} мин)`),
+          timeLimit,
+        );
+      }
       const res = await settled;
       clearTimeout(this.timer);
       if (this.cancelled || this.interrupted) return;

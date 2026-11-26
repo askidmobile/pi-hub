@@ -56,19 +56,19 @@ graph TD
 
 ### Protocol (`packages/protocol/src`)
 
-- [ ] `status.ts` — переход `done → running` (D-102); комментарий о смысле `done` = «готово к слиянию».
-- [ ] `envelope.ts` — `QualityResult { status, issues: string[], log_path? }`; поля `attempt`, `questions: { asked, answered }`; тип `OpenQuestion { task_id, round, kind, question, options? }`; `WaitResult` с `question?`.
-- [ ] `tools.ts` — `StartInput.clarify?: boolean`; описание `send` — «ответ на вопрос, доработка или продолжение»; описания по одной фразе.
-- [ ] `hub-wire.ts` — `HookQuery { type: "hook_query", protocol_version, event: "stop", pid, cwd, stop_hook_active? }` и `HookReply { block: boolean, reason?: string }` с zod-схемами; заготовка `PendingQuestionsQuery` заменяется ими.
-- [ ] `version.ts` — `PROTOCOL_VERSION = 0.2.0` (новый тип первой строки; старый shim совместим — его сообщения не меняются).
+- [x] `status.ts` — переход `done → running` (D-102); комментарий о смысле `done` = «готово к слиянию».
+- [x] `envelope.ts` — `QualityResult { status, issues: string[], log_path? }`; поля `attempt`, `questions: { asked, answered }`; тип `OpenQuestion { task_id, round, kind, question, options? }`; `WaitResult` с `question?`.
+- [x] `tools.ts` — `StartInput.clarify?: boolean`; описание `send` — «ответ на вопрос, доработка или продолжение»; описания по одной фразе.
+- [x] `hub-wire.ts` — `HookQuery { type: "hook_query", protocol_version, event: "stop", pid, cwd, stop_hook_active? }` и `HookReply { block: boolean, reason?: string }` с zod-схемами; заготовка `PendingQuestionsQuery` заменяется ими.
+- [x] `version.ts` — `PROTOCOL_VERSION = 0.2.0` (новый тип первой строки; старый shim совместим — его сообщения не меняются).
 
 ### Hub (`packages/hub/src`)
 
 #### Files:
-- [ ] `storage/migrations/004_questions_quality.sql` — новые поля `questions` (`kind`, `pi_dialog_id`, `resume_status`, `hook_delivered_at`); `tasks.quality_issues_json`, `tasks.quality_log_path`; таблица `quality_baselines`; пересборка `steps` с `cost_source` ∈ `provider|pi_event|tokens_x_price|unknown` и полем `price_json`.
-- [ ] `storage/repos.ts` — вопросы: `insertQuestion`, `openQuestion(taskId)`, `answerQuestion`, `closeQuestion`, `openQuestionsForSession(sessionId)`, `markHookDelivered`, `countQuestions(taskId)`; базовые проверки: `getBaseline(projectId, commit)`, `putBaseline`; сессии: `sessionsByParentPids(pids)`, `connectedSessionsForProject(projectId, client)`.
-- [ ] `config/schema.ts` — `limits.max_task_usd` и `limits.max_task_minutes` необязательные, без значений по умолчанию (D-105); в `ProjectConfig.quality` — `timeout_minutes` (по умолчанию 15).
-- [ ] `config/prices.ts` — загрузка `~/.pi-hub/prices.yaml` (zod-схема по `config/prices.example.yaml`), перечитывание по `mtime`, поиск цены по `provider/model`.
+- [x] `storage/migrations/004_questions_quality.sql` — новые поля `questions` (`kind`, `pi_dialog_id`, `resume_status`, `hook_delivered_at`); `tasks.quality_issues_json`, `tasks.quality_log_path`; таблица `quality_baselines`; пересборка `steps` с `cost_source` ∈ `provider|pi_event|tokens_x_price|unknown` и полем `price_json`.
+- [x] `storage/repos.ts` — вопросы: `insertQuestion`, `openQuestion(taskId)`, `answerQuestion`, `closeQuestion`, `openQuestionsForSession(sessionId)`, `markHookDelivered`, `countQuestions(taskId)`; базовые проверки: `getBaseline(projectId, commit)`, `putBaseline`; сессии: `sessionsByParentPids(pids)`, `connectedSessionsForProject(projectId, client)`.
+- [x] `config/schema.ts` — `limits.max_task_usd` и `limits.max_task_minutes` необязательные, без значений по умолчанию (D-105); в `ProjectConfig.quality` — `timeout_minutes` (по умолчанию 15).
+- [x] `config/prices.ts` — загрузка `~/.pi-hub/prices.yaml` (zod-схема по `config/prices.example.yaml`), перечитывание по `mtime`, поиск цены по `provider/model`.
 - [ ] `pi-rpc/pi-rpc-client.ts` — `respondUi(id, value | cancelled)`; ожидание `agent_settled` можно запускать повторно (несколько `prompt` в одном процессе).
 - [ ] `tasks/questions.ts` (новый) — `QuestionService`: разбор диалога pi-hub (маркер в `title`), запись вопроса, ответ, отказ на чужие диалоги, текст для хука и строки вопросов.
 - [ ] `tasks/worker-runner.ts` — жизненный цикл с живым Pi: обработка `ui_request` (→ `needs_input`, пауза таймера), `answer(text)`; `clarify` (`planning`); вопрос текстом (FR-120) до `ensureSummary`; финализация → проверка качества → авто-круг → итог; остановка Pi только в конце; пределы — только если заданы.
@@ -182,10 +182,14 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 - **Independent check:** факты в «Plan decisions»; фикстура в репозитории, поиск ключа по ней пустой.
 
 ### Phase 1: Протокол, хранилище, конфиг (estimate: 4 h)
-- [ ] [P] Протокол: `done → running`, типы вопросов и качества, `clarify`, `HookQuery`/`HookReply`, `PROTOCOL_VERSION 0.2.0` → `packages/protocol/src/*`
-- [ ] Миграция `004_questions_quality.sql` (включая пересборку `steps`) и методы `repos.ts`
-- [ ] [P] Конфиг: необязательные пределы, `quality.timeout_minutes`, `config/prices.ts`; примеры в `config/`
-- [ ] Тесты: миграция на чистой БД и на БД с данными этапа 1 (шаги сохраняются); переходы статусов; загрузка `prices.yaml` (ошибки, перечитывание); конфиг без пределов
+- [x] [P] Протокол: `done → running`, типы вопросов и качества, `clarify`, `HookQuery`/`HookReply`, `PROTOCOL_VERSION 0.2.0` → `packages/protocol/src/*`
+- [x] Миграция `004_questions_quality.sql` (включая пересборку `steps`) и методы `repos.ts`
+- [x] [P] Конфиг: необязательные пределы, `quality.timeout_minutes`, `config/prices.ts`; примеры в `config/`
+- [x] Тесты: миграция на чистой БД и на БД с данными этапа 1 (шаги сохраняются); переходы статусов; загрузка `prices.yaml` (ошибки, перечитывание); конфиг без пределов
+- deviated: `HookQuery` несёт и `client` (для хука Codex на этапе 3) — хаб ищет сессию только этого клиента.
+- deviated: `paths.prices` (`~/.pi-hub/prices.yaml`) добавлен в `HubPaths`, чтобы путь был в одном месте с остальными.
+- deviated: чтобы сборка не ломалась от новых полей протокола, в фазе 1 сделаны минимальные связки: `buildEnvelope` заполняет `quality.issues`/`log_path`, `attempt`, `questions` (полностью — фаза 3), а `WorkerRun` применяет пределы задачи, только если они заданы (пауза таймера в `needs_input` — фаза 2). `pi-hub init` больше не пишет пределы в конфиг.
+- deviated: `prices.yaml` с ошибкой не ломает учёт: ручных цен нет, ошибка сообщается один раз на изменение файла.
 - **Independent check:** `pnpm test` и `pnpm typecheck` зелёные; БД этапа 1 мигрирует без потери шагов.
 
 ### Phase 2: Вопросы без MCP (estimate: 10 h)
@@ -242,10 +246,10 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | FR-102 | 2 | `tasks/questions.ts`, обработка `ui_request` в `WorkerRun` |
 | FR-103 | 2, 5 | `waitFor` с вопросом, фасад `wait` |
 | FR-104 | 2 | `TaskService.send` для `needs_input`, `respondUi` |
-| FR-105 | 1, 2 | `done → running`, `send` для `done` |
+| FR-105 🔶 | 1, 2 | `done → running`, `send` для `done` |
 | FR-106 | 2 | `recover()`, продолжение с «вопрос/ответ» |
 | FR-107 | 5 | строка ожидающих вопросов в фасаде |
-| FR-108 | 1, 5 | `HookQuery`, `hook-resolver.ts`, `unix-server.ts` |
+| FR-108 🔶 | 1, 5 | `HookQuery`, `hook-resolver.ts`, `unix-server.ts` |
 | FR-109 | 5 | `shim/hook.ts`, `hooks.json`, отметка доставки |
 | FR-110 | 5 | таймауты shim и сервера, `hooks.log` |
 | FR-111 | 3 | `quality-gate.ts`: команды, окружение, таймаут |
@@ -253,9 +257,9 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | FR-113 | 3 | авто-круг в `WorkerRun` |
 | FR-114 | 3 | блокировка на проект |
 | FR-115 | 2 | `worker-prompt.md` |
-| FR-116 | 1, 4 | `prices.ts`, цепочка источников, миграция `steps` |
+| FR-116 🔶 | 1, 4 | `prices.ts`, цепочка источников, миграция `steps` |
 | FR-117 | 4 | `formatCostLine`, итог по сессии |
-| FR-118 | 1, 2 | необязательные пределы, пауза таймера в `needs_input` |
+| FR-118 🔶 | 1, 2 | необязательные пределы, пауза таймера в `needs_input` |
 | FR-119 | 3 | проверка базы, `quality_baselines` |
 | FR-120 | 2 | `detectTextQuestion` до `ensureSummary` |
 | FR-121 | 2, 3 | промпт, `detectTestTampering` |

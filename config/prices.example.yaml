@@ -1,7 +1,14 @@
-# Hub price overrides, USD per 1M tokens (OQ-11, docs/research/prices.md).
-# Primary sources, in order: provider actual cost (OpenRouter) -> Pi catalog cost (pi_event) -> this table.
-# The hub imports Pi catalog prices on start / Pi upgrade (valid_from = import date) and uses
-# this file only for models Pi does not price correctly: System One models, zero-priced entries, custom deals.
+# ~/.pi-hub/prices.yaml: manual model prices, USD per 1M tokens (stage 2 FR-116, BD-023).
+# A step's cost comes from, in order: the provider's own cost -> Pi's catalog cost
+# (Pi computes it in message_end) -> this file (tokens x price) -> "price unknown".
+# Only list models nobody else prices: providers from Pi extensions, System One models,
+# zero-priced catalog entries, custom deals. The hub re-reads the file when it changes.
+- model: Deepseek-v4.1-flash
+  provider: 9router # a provider registered by a personal Pi extension (pi.extensions)
+  input: 0.07 # example values: take them from the provider's pricing page
+  output: 0.28
+  cache_read: 0.007
+  cache_write: null
 - model: jev-1.14.0
   provider: typesafe
   input: 0.042 # docs.typesafe.ai/models: $42 per 1B input tokens; Pi catalog says 0
