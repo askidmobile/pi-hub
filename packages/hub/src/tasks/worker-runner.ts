@@ -25,7 +25,7 @@ export interface RunnerDeps {
   wm: WorkspaceManager;
   accounting: Accounting;
   logger: Logger;
-  pi: { bin: string; binArgs?: string[]; extensionPath: string };
+  pi: { bin: string; binArgs?: string[]; extensionPath: string; extraExtensions?: string[] };
   /** Test hooks; production uses config limits. */
   timing?: { timeLimitMs?: number; summaryTimeoutMs?: number; stopGraceMs?: number };
   transition: (taskId: string, to: TaskStatus, patch?: TaskPatch) => boolean;
@@ -168,6 +168,7 @@ export class WorkerRun {
           sessionDir: deps.paths.sessionsDir,
           taskId: task.id,
           extensionPath: deps.pi.extensionPath,
+          ...(deps.pi.extraExtensions ? { extraExtensions: deps.pi.extraExtensions } : {}),
           promptFile,
           piAgentDir: deps.paths.piAgentDir,
           secrets: deps.secrets,

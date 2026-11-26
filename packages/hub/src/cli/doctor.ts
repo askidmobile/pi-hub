@@ -93,12 +93,16 @@ export async function runDoctor(
     );
   }
 
-  const extension = config.pi.extension_path ?? defaultExtensionPath();
-  checks.push(
-    existsSync(extension)
-      ? ok("расширение воркера", extension)
-      : fail("расширение воркера", `${extension} не найден`),
-  );
+  for (const extension of [
+    config.pi.extension_path ?? defaultExtensionPath(),
+    ...config.pi.extensions,
+  ]) {
+    checks.push(
+      existsSync(extension)
+        ? ok("расширение воркера", extension)
+        : fail("расширение воркера", `${extension} не найден`),
+    );
+  }
 
   if (ref && !piVersion.error && (!keyVar || keyValue)) {
     checks.push(await probeModel(config, paths, ref, keyVar, keyValue, opts.probeTimeoutMs));
@@ -161,6 +165,7 @@ async function probeModel(
       "rpc",
       "--no-session",
       "-ne",
+      ...config.pi.extensions.flatMap((e) => ["-e", e]),
       "-ns",
       "-np",
       "--no-mcp",

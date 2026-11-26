@@ -37,6 +37,12 @@ export const HubConfig = z
         bin_args: z.array(z.string()).default([]),
         /** Override the worker extension location (defaults to the bundled @pi-hub/pi-extension). */
         extension_path: z.string().optional(),
+        /**
+         * Extra Pi extensions loaded into every worker, e.g. a provider extension that
+         * registers a custom provider (plan PD-013). Workers still start with `-ne`:
+         * only the pi-hub extension and these paths are loaded.
+         */
+        extensions: z.array(z.string()).default([]),
       })
       .prefault({}),
     transport: z

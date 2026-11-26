@@ -83,3 +83,12 @@ describe("worker launch (ADR-0011, FR-011)", () => {
     expect(Object.keys(fake.env).some((k) => k.endsWith("_API_KEY"))).toBe(false);
   });
 });
+
+describe("provider extensions (plan PD-013)", () => {
+  it("adds each config pi.extensions path as -e after the pi-hub extension, keeping -ne", () => {
+    const { args } = buildWorkerLaunch({ ...base, extraExtensions: ["/u/9router.ts", "/u/b.ts"] });
+    const i = args.indexOf("/ext/index.ts");
+    expect(args.slice(i + 1, i + 5)).toEqual(["-e", "/u/9router.ts", "-e", "/u/b.ts"]);
+    expect(args).toContain("-ne");
+  });
+});

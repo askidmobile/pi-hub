@@ -8,6 +8,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultExtensionPath } from "../src/assets.js";
+import { listTasks } from "../src/cli/status.js";
 import { type DaemonHandle, startDaemon } from "../src/daemon.js";
 import { pidAlive } from "../src/tasks/task-service.js";
 import { FAKE_WORKER, initRepo, tempDir } from "./helpers.js";
@@ -157,6 +158,35 @@ describe("MCP over shim with an in-process daemon", () => {
     expect(await until(async () => true)).toBe(true);
     await until(() => listChanged.length > 1);
     expect(await toolNames(client)).toEqual(["architect_mode"]);
+  });
+
+  it("off with a running task refuses new starts; the task survives the client closing", async () => {
+    const { client } = await connectClient(home, repo);
+    clients.push(client);
+    await client.callTool({ name: "architect_mode", arguments: { mode: "on" } });
+    const s = parse(
+      await client.callTool({
+        name: "start",
+        arguments: { task: "x", model: "fake/hang", repo, base_branch: "main" },
+      }),
+    );
+    const off = parse(
+      await client.callTool({ name: "architect_mode", arguments: { mode: "off" } }),
+    );
+    expect(off.running_tasks).toEqual([s.task_id]);
+    const refused = await client.callTool({
+      name: "start",
+      arguments: { task: "y", repo, base_branch: "main" },
+    });
+    // Dynamic tool list: the SDK refuses the disabled tool before the hub sees the call.
+    expect(refused.isError).toBe(true);
+
+    await client.close();
+    clients.splice(clients.indexOf(client), 1);
+    await new Promise((r) => setTimeout(r, 300));
+    const [row] = listTasks({ PI_HUB_HOME: home });
+    expect(row).toMatchObject({ id: s.task_id, status: "running" });
+    expect(row?.pid && pidAlive(row.pid)).toBe(true);
   });
 
   it("wait returns running at the client cap and sends progress (ADR-0006)", async () => {

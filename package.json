@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "check:attribution": "bash scripts/check-attribution.sh"
+    "check:attribution": "bash scripts/check-attribution.sh",
+    "e2e": "node scripts/e2e.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.9",

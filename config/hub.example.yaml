@@ -6,6 +6,8 @@ allowed_repos:
 pi:
   version: "1.6.1" # pinned; upgrade only after adapter tests pass
   bin: pi
+  # Provider extensions loaded into workers besides the pi-hub one (workers still run with -ne).
+  # extensions: [~/.pi/agent/extensions/9router.ts]
 transport:
   unix_socket: ~/.pi-hub/hub.sock
   # http: { host: 127.0.0.1, port: 7433 }   # remote: only via SSH tunnel / VPN

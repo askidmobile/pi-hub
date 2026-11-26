@@ -188,6 +188,15 @@ describe("TaskService (fake worker)", () => {
     );
   });
 
+  it("fails on a setup error before Pi starts, with no steps recorded (FR-024)", async () => {
+    writeFileSync(join(h.repo, ".pi-hub.toml"), 'setup = "echo broken deps >&2; exit 3"\n');
+    const s = await start(h);
+    const w = await h.service.waitFor(h.sessionId, s.task_id, 15_000);
+    expect(w.status).toBe("failed");
+    expect(w.failure_reason).toMatch(/setup завершился с кодом 3: .*broken deps/);
+    expect(h.repos.taskUsage(s.task_id).steps).toBe(0);
+  });
+
   it("stops a task over the cost limit (FR-025)", async () => {
     const s = await start(h, "fake/expensive");
     const w = await h.service.waitFor(h.sessionId, s.task_id, 15_000);

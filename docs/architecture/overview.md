@@ -40,7 +40,7 @@
 | `accounting/` | запись `steps`, цены, бюджеты 80/100 %, строка стоимости, `usage_report`                              | storage               |
 | `storage/`    | `node:sqlite`, миграции по `schema_version`, JSONL-журналы задач                                      | —                     |
 | `notify/`     | уведомления пользователю (сироты, молчание старшего, бюджет)                                          | —                     |
-| `cli/` | `pi-hub serve\|hook\|doctor\|token\|report` | commander |
+| `cli/` | `pi-hub serve\|init\|doctor\|status` (этап 1); `hook\|token\|report` — следующие этапы | commander, `@inquirer/prompts` |
 
 Внутри процесса модули общаются через типизированную шину событий (`task.status_changed`, `task.question`, `step.recorded`) — её же позже читает веб-панель.
 

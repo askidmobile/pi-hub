@@ -1,9 +1,11 @@
 import {
   closeSync,
   existsSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
+  rmSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -44,29 +46,50 @@ export interface DaemonHandle {
   close(): Promise<void>;
 }
 
-/** Exclusive lock file holding our PID; a stale lock of a dead process is taken over. */
+/**
+ * Exclusive lock file holding our PID; a stale lock of a dead process is taken over.
+ * The PID is written to a temp file first and hard-linked into place, so the lock never
+ * exists without its PID: a concurrent starter cannot mistake a half-written lock for a
+ * stale one and delete it.
+ */
 export function acquireLock(file: string): () => void {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const fd = openSync(file, "wx", 0o600);
-      writeSync(fd, String(process.pid));
-      closeSync(fd);
-      return () => {
-        try {
-          if (readFileSync(file, "utf8").trim() === String(process.pid)) unlinkSync(file);
-        } catch {
-          /* already removed */
-        }
-      };
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-      const pid = Number.parseInt(readFileSync(file, "utf8").trim(), 10);
-      if (Number.isFinite(pid) && pid !== process.pid && pidAlive(pid))
-        throw new AlreadyRunningError(pid);
-      unlinkSync(file);
+  const tmp = `${file}.${process.pid}`;
+  const fd = openSync(tmp, "w", 0o600);
+  writeSync(fd, String(process.pid));
+  closeSync(fd);
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        linkSync(tmp, file);
+        return () => {
+          try {
+            if (readFileSync(file, "utf8").trim() === String(process.pid)) unlinkSync(file);
+          } catch {
+            /* already removed */
+          }
+        };
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        const content = readLock(file);
+        const pid = Number.parseInt(content ?? "", 10);
+        if (Number.isFinite(pid) && pid !== process.pid && pidAlive(pid))
+          throw new AlreadyRunningError(pid);
+        // Take over only the lock we judged stale, not one a racing starter just replaced.
+        if (readLock(file) === content) rmSync(file, { force: true });
+      }
     }
+    throw new Error(`could not acquire ${file}`);
+  } finally {
+    rmSync(tmp, { force: true });
   }
-  throw new Error(`could not acquire ${file}`);
+}
+
+function readLock(file: string): string | undefined {
+  try {
+    return readFileSync(file, "utf8").trim();
+  } catch {
+    return undefined;
+  }
 }
 
 export async function startDaemon(env: NodeJS.ProcessEnv = process.env): Promise<DaemonHandle> {
@@ -96,6 +119,7 @@ export async function startDaemon(env: NodeJS.ProcessEnv = process.env): Promise
         bin: config.pi.bin,
         binArgs: config.pi.bin_args,
         extensionPath: config.pi.extension_path ?? defaultExtensionPath(),
+        extraExtensions: config.pi.extensions,
       },
     });
     const sessions = new SessionRegistry(repos, config);

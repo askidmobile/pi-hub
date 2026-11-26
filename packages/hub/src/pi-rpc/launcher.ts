@@ -46,6 +46,8 @@ export interface WorkerLaunchInput {
   sessionDir: string;
   taskId: string;
   extensionPath: string;
+  /** Extra extensions from config `pi.extensions` (provider extensions). */
+  extraExtensions?: readonly string[];
   promptFile: string;
   piAgentDir: string;
   secrets: Readonly<Record<string, string>>;
@@ -95,6 +97,7 @@ export function workerArgs(input: WorkerLaunchInput): string[] {
     "-ne",
     "-e",
     input.extensionPath,
+    ...(input.extraExtensions ?? []).flatMap((e) => ["-e", e]),
     "-ns",
     "-np",
     "--no-mcp",

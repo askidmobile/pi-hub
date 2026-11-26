@@ -50,6 +50,7 @@ export function loadHubConfig(file: string): HubConfig {
   if (!parsed.success) throw new ConfigError(file, formatZod(parsed.error));
   const config = parsed.data;
   config.allowed_repos = config.allowed_repos.map((r) => resolve(expandHome(r)));
+  config.pi.extensions = config.pi.extensions.map((e) => resolve(expandHome(e)));
   if (config.pi.extension_path)
     config.pi.extension_path = resolve(expandHome(config.pi.extension_path));
   return config;
