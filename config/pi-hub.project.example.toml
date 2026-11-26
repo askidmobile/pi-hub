@@ -1,6 +1,8 @@
 # .pi-hub.toml in a repository root
 delegation = "on"
 daily_budget_usd = 5.0
+# Runs in a fresh worktree before the worker starts (spec stage 1, FR-024).
+setup = "pnpm install --frozen-lockfile"
 
 [quality]
 test = "pnpm test"

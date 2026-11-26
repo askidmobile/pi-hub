@@ -20,6 +20,8 @@ export const HubConfig = z.object({
     max_workers_hub: z.number().int().positive().default(4),
     max_workers_project: z.number().int().positive().default(2),
     max_workers_session: z.number().int().positive().default(2),
+    max_task_minutes: z.number().int().positive().default(60),
+    max_task_usd: z.number().positive().default(2),
   }),
   clients: z
     .partialRecord(

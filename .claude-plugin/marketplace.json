@@ -1,0 +1,11 @@
+{
+  "name": "pi-hub-local",
+  "owner": { "name": "pi-hub" },
+  "plugins": [
+    {
+      "name": "pi-hub",
+      "source": "./plugins/claude-code",
+      "description": "Delegate coding tasks to cheap Pi workers through the pi-hub daemon (architect mode)."
+    }
+  ]
+}
