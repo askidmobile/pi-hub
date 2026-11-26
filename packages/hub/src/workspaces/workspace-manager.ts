@@ -94,7 +94,9 @@ export class WorkspaceManager {
     timeoutMs = 15 * 60_000,
   ): Promise<SetupResult> {
     return new Promise((resolve) => {
-      const child = spawn("sh", ["-c", command], { cwd: path, env });
+      // Own process group: on timeout the whole tree is killed, not only `sh` (dash on Linux
+      // forks the command, and an orphaned grandchild would keep the pipes open).
+      const child = spawn("sh", ["-c", command], { cwd: path, env, detached: true });
       let output = "";
       const collect = (b: Buffer) => {
         output = (output + b.toString("utf8")).slice(-256 * 1024);
@@ -104,7 +106,11 @@ export class WorkspaceManager {
       let timedOut = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill("SIGKILL");
+        try {
+          if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
       }, timeoutMs);
       child.on("close", (code) => {
         clearTimeout(timer);

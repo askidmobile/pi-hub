@@ -79,8 +79,11 @@ describe("WorkspaceManager", () => {
     );
     expect(bad).toMatchObject({ ok: false, exitCode: 3, timedOut: false });
     expect(bad.excerpt).toContain("ERR! missing dependency foo");
-    const slow = await wm.runSetup(ws.path, "sleep 5", allowlistedEnv(), 200);
+    // A forked grandchild (not exec'd by sh) must die with the timeout too.
+    const slowStarted = Date.now();
+    const slow = await wm.runSetup(ws.path, "sleep 30; echo late", allowlistedEnv(), 200);
     expect(slow).toMatchObject({ ok: false, timedOut: true });
+    expect(Date.now() - slowStarted).toBeLessThan(3_000);
     const leak = await wm.runSetup(
       ws.path,
       'test -z "$ANTHROPIC_API_KEY" && test -n "$PATH"',
