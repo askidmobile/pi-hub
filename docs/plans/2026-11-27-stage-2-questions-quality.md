@@ -1,7 +1,7 @@
 # Plan: Этап 2 — вопросы воркера и проверка качества
 
 **Date:** 2026-11-27
-**Status:** 📝 Planning
+**Status:** 🔄 Implementing
 **Priority:** P1
 **Specification:** [docs/specs/2026-11-27-stage-2-questions-quality.md](../specs/2026-11-27-stage-2-questions-quality.md)
 
@@ -174,9 +174,11 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 ## Implementation phases
 
 ### Phase 0: Проверка допущений (estimate: 2 h)
-- [ ] Хук Stop в настоящем Claude Code (CLI из приложения, отдельный `CLAUDE_CONFIG_DIR`, тестовый плагин): какие поля приходят в stdin (`cwd`, `stop_hook_active`, `session_id`), формат блокировки, и является ли процесс Claude Code, запустивший MCP-сервер (родитель shim), предком процесса хука → записать в «Plan decisions»; если CLI без входа не запускает ход — пользователь делает один прогон по инструкции.
-- [ ] Записать реальный обмен `ask` на Pi 1.6.1 (`9router/Deepseek-v4.1-flash`): `extension_ui_request` (метод `input`, `title`), ответ, `tool_execution_end` → `packages/hub/test/fixtures/pi-session-ask.jsonl` без секретов.
-- [ ] Проверить, что после ответа на `ask` и `agent_settled` тот же процесс Pi принимает новый `prompt` (нужно для авто-круга и вопроса текстом).
+- [x] Хук Stop в настоящем Claude Code (CLI из приложения, отдельный `CLAUDE_CONFIG_DIR`, тестовый плагин): какие поля приходят в stdin (`cwd`, `stop_hook_active`, `session_id`), формат блокировки, и является ли процесс Claude Code, запустивший MCP-сервер (родитель shim), предком процесса хука → записать в «Plan decisions»; если CLI без входа не запускает ход — пользователь делает один прогон по инструкции.
+- [x] Записать реальный обмен `ask` на Pi 1.6.1 (`9router/Deepseek-v4.1-flash`): `extension_ui_request` (метод `input`, `title`), ответ, `tool_execution_end` → `packages/hub/test/fixtures/pi-session-ask.jsonl` без секретов.
+- [x] Проверить, что после ответа на `ask` и `agent_settled` тот же процесс Pi принимает новый `prompt` (нужно для авто-круга и вопроса текстом).
+- deviated: ход модели в Claude Code без входа не запускается, поэтому событие Stop целиком не вызывалось; дерево процессов проверено на SessionStart (тот же механизм запуска хуков), а формат входа и ответа Stop — по коду Claude Code 2.1.331 (PD-110, PD-111).
+- deviated: фикстура содержит строки `{"__sent": …}` — команды клиента в порядке отправки, чтобы контрактный тест воспроизводил обмен целиком; пути заменены на `/tmp/pihub-fixture` и `/home/user`.
 - **Independent check:** факты в «Plan decisions»; фикстура в репозитории, поиск ключа по ней пустой.
 
 ### Phase 1: Протокол, хранилище, конфиг (estimate: 4 h)
@@ -312,6 +314,9 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | PD-107 | Как хаб находит предков процесса хука | `ps -o ppid= -p <pid>` по цепочке до 10 уровней в хабе (macOS и Linux), без новых зависимостей; хук передаёт только свой PID и `cwd` | 2026-11-27 |
 | PD-108 | Версия протокола при добавлении `hook_query` | `0.2.0`: новый тип первой строки, существующие сообщения не меняются — старый shim по-прежнему подключается (совместимость по старшей цифре) | 2026-11-27 |
 | PD-109 | Где брать ручные цены | `~/.pi-hub/prices.yaml`, перечитывается по `mtime` при поиске цены; таблица `prices` БД на этом этапе не используется (D-107) | 2026-11-27 |
+| PD-110 | Фаза 0: найдёт ли хаб сессию по предкам процесса хука | Да. Проверено в Claude Code 2.1.331 (CLI из приложения, отдельный `CLAUDE_CONFIG_DIR`, хук SessionStart и MCP-сервер через `--settings`/`--mcp-config`): процесс хука — `/bin/sh`, его родитель — тот же процесс `claude`, что запустил MCP-сервер (родитель shim). Цепочка «хук → sh → claude» укладывается в 2 шага `ps`; запасной путь по проекту (FR-122) остаётся страховкой | 2026-11-27 |
+| PD-111 | Фаза 0: вход и ответ хука Stop | Вход: общие поля (`session_id`, `transcript_path`, `cwd`, `hook_event_name: "Stop"`) + `stop_hook_active`, `last_assistant_message`. Блокировка: JSON `{"decision":"block","reason":…}` на stdout с кодом 0. Claude Code сам ограничивает число блокировок подряд и советует не блокировать при `stop_hook_active = true` → shim при `stop_hook_active` не блокирует вовсе (вместе с D-110) | 2026-11-27 |
+| PD-112 | Фаза 0: `ask` и повторный `prompt` на Pi 1.6.1 | Проверено на `9router/Deepseek-v4.1-flash`: `ctx.ui.input(title)` приходит как `extension_ui_request {id, method: "input", title, placeholder}`, ответ `extension_ui_response {id, value}` возвращается в инструмент; свободный ответ вне вариантов модель использует (D-111). После `agent_settled` тот же процесс принимает новый `prompt` с полным контекстом — авто-круг и вопрос текстом идут в живой процесс (PD-103). Фикстура `test/fixtures/pi-session-ask.jsonl` | 2026-11-27 |
 
 ## Tech Debt
 
