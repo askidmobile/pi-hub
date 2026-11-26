@@ -1,0 +1,18 @@
+# Hub price overrides, USD per 1M tokens (OQ-11, docs/research/prices.md).
+# Primary sources, in order: provider actual cost (OpenRouter) -> Pi catalog cost (pi_event) -> this table.
+# The hub imports Pi catalog prices on start / Pi upgrade (valid_from = import date) and uses
+# this file only for models Pi does not price correctly: System One models, zero-priced entries, custom deals.
+- model: jev-1.14.0
+  provider: typesafe
+  input: 0.042 # docs.typesafe.ai/models: $42 per 1B input tokens; Pi catalog says 0
+  output: 0 # output tokens are free
+  cache_read: null
+  cache_write: null
+  valid_from: 2026-11-26
+- model: jev-1.13.0
+  provider: typesafe
+  input: 0.042
+  output: 0
+  cache_read: null
+  cache_write: null
+  valid_from: 2026-11-26

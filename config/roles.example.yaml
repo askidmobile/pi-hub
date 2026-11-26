@@ -1,0 +1,19 @@
+# model = <pi provider>/<model id> as in Pi's model catalog (RPC get_available_models).
+# Prices: docs/research/prices.md.
+roles:
+  design: { model: moonshotai/kimi-k3, fallback: [zai/glm-5.2] }
+  analysis: { model: zai/glm-5.2, fallback: [deepseek/deepseek-v4-pro] }
+  code: { model: deepseek/deepseek-flash, escalate: [deepseek/deepseek-v4-pro] }
+  review: { model: openai/gpt-5.6-luna, fallback: [deepseek/deepseek-v4-pro] }
+  docs: { model: deepseek/deepseek-flash }
+default_role: code
+router:
+  # Written by `pi-hub init` / `pi-hub router setup`. See docs/adr/0008-smart-router-setup.md.
+  smart: true # false = rules only
+  system_one:
+    preset: typesafe # typesafe | openrouter | aimlapi | ollama | ollama-cloud | cloudflare | litellm | custom
+    url: https://api.typesafe.ai/v1/systemone
+    api_key_env: TYPESAFE_API_KEY # the key itself lives in ~/.pi-hub/.env
+    model: jev-latest
+    timeout_ms: 3000
+    min_confidence: 0.75

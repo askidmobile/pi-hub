@@ -1,0 +1,18 @@
+{
+  "name": "@pi-hub/shim",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "pi-hub-shim": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@pi-hub/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  }
+}

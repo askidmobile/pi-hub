@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+.pi-hub-data/
+logs/
+.DS_Store
+__pycache__/

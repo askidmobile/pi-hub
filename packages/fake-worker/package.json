@@ -1,0 +1,17 @@
+{
+  "name": "@pi-hub/fake-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "pi-hub-fake-worker": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@pi-hub/protocol": "workspace:*"
+  }
+}

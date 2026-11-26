@@ -1,0 +1,8 @@
+# .pi-hub.toml in a repository root
+delegation = "on"
+daily_budget_usd = 5.0
+
+[quality]
+test = "pnpm test"
+lint = "pnpm lint"
+typecheck = "pnpm typecheck"
