@@ -12,14 +12,15 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@pi-hub/protocol": "workspace:*",
+    "@inquirer/prompts": "^8.8.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@pi-hub/pi-extension": "workspace:*",
+    "@pi-hub/protocol": "workspace:*",
     "commander": "^15.1.0",
     "pino": "^10.4.0",
     "smol-toml": "^1.9.1",
     "yaml": "^2.9.1",
-    "zod": "^4.6.7",
-    "@pi-hub/pi-extension": "workspace:*"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@pi-hub/fake-worker": "workspace:*"
