@@ -57,6 +57,7 @@ export interface TaskRow {
   cost_usd: number;
   attempt: number;
   started_at: string | null;
+  base_commit: string | null;
 }
 
 /** Columns a caller may change after insert. `id`, `owner_session_id`, `project_id`, `created_at` are fixed. */
@@ -121,6 +122,7 @@ const TASK_PATCHABLE = new Set<keyof TaskPatch>([
   "cost_usd",
   "attempt",
   "started_at",
+  "base_commit",
 ]);
 
 /** Deterministic project id: the same repository always maps to the same row. */
