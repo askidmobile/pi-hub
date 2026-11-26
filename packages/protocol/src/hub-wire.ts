@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { ClientKind } from "./status.js";
 
 /** First message from shim (or hook) to hub. */
@@ -32,3 +33,15 @@ export interface PendingQuestionsQuery {
   client_session_id?: string;
   parent_pid: number;
 }
+
+/** Runtime validation of the first line a shim sends. */
+export const HelloSchema = z.object({
+  type: z.literal("hello"),
+  protocol_version: z.string(),
+  client: z.enum(["claude-code", "codex", "mcp"]),
+  client_session_id: z.string().optional(),
+  parent_pid: z.number().int(),
+  pid: z.number().int(),
+  cwd: z.string(),
+  token: z.string().optional(),
+});

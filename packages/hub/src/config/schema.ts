@@ -33,6 +33,8 @@ export const HubConfig = z
       .object({
         version: z.string().default(PINNED_PI_VERSION),
         bin: z.string().default("pi"),
+        /** Extra leading arguments for `bin` (a wrapper script, or the fake worker in tests). */
+        bin_args: z.array(z.string()).default([]),
         /** Override the worker extension location (defaults to the bundled @pi-hub/pi-extension). */
         extension_path: z.string().optional(),
       })

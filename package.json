@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "tsc -b packages/* && node scripts/copy-assets.mjs",
-    "typecheck": "tsc -b packages/* --noEmit",
-    "test": "vitest run",
+    "typecheck": "tsc -b packages/*",
+    "test": "pnpm build && vitest run",
     "test:watch": "vitest",
     "lint": "biome check .",
     "format": "biome format --write .",
