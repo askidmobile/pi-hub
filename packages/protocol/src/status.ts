@@ -22,7 +22,7 @@ export const TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = 
   needs_input: ["planning", "running", "cancelled", "orphaned"],
   checking: ["done", "failed", "running", "interrupted"],
   done: [],
-  failed: ["queued"], // escalation / retry creates a new run
+  failed: ["queued", "running"], // queued: escalation creates a new run; running: `send` continues the same Pi session (spec D-007)
   cancelled: [],
   interrupted: ["running", "cancelled"],
   orphaned: ["running", "planning", "cancelled"],

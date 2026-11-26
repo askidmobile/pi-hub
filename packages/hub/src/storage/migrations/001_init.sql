@@ -1,5 +1,6 @@
 -- pi-hub initial schema. Only the hub daemon writes to this database.
 -- PRAGMA journal_mode = WAL is set by the storage layer on open.
+-- schema_version is maintained by the migration runner (storage/db.ts).
 
 CREATE TABLE schema_version (version INTEGER NOT NULL);
 
@@ -100,5 +101,3 @@ CREATE TABLE prices (
   valid_from   TEXT NOT NULL,
   PRIMARY KEY (model, provider, valid_from)
 );
-
-INSERT INTO schema_version (version) VALUES (1);

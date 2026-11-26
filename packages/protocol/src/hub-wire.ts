@@ -7,7 +7,9 @@ export interface Hello {
   client: ClientKind;
   client_session_id?: string; // from client hooks (e.g. Claude Code session_id)
   parent_pid: number; // fallback key shared by shim and hooks of one session
-  project: { repo_root: string; remote_url?: string };
+  pid: number; // the shim process itself, for logs and doctor
+  /** Working directory of the senior agent; the hub resolves the git root and remote itself. */
+  cwd: string;
   token?: string;
 }
 

@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -b packages/*",
+    "build": "tsc -b packages/* && node scripts/copy-assets.mjs",
     "typecheck": "tsc -b packages/* --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

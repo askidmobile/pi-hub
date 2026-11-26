@@ -16,7 +16,7 @@
 | T-002 | 2026-11-26 | Закрыть открытые вопросы OQ-04,06-11,13,15 | [`open-questions.md`](docs/brief/open-questions.md) | ✅ Done |
 | T-003 | 2026-11-26 | Спека этапа 1: ядро на одной машине | [``](docs/specs/) | ✅ Done (docs/specs/2026-11-26-stage-1-core.md) |
 | T-004 | 2026-11-26 | План этапа 1: /create-spec-plan | [`2026-11-26-stage-1-core.md`](docs/specs/2026-11-26-stage-1-core.md) | ✅ Done (docs/plans/2026-11-26-stage-1-core.md) |
-| T-005 | 2026-11-26 | Реализация этапа 1: ядро на одной машине | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | 📝 Planning |
+| T-005 | 2026-11-26 | Реализация этапа 1: ядро на одной машине | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | 🔄 Фазы 0–1 из 6 |
 
 ## 📦 Backlog
 

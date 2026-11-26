@@ -20,6 +20,20 @@ export interface ResultEnvelope {
   usage: UsageSummary;
   session_total_usd: number;
   log_path: string;
+  /** Hub-detected problems the senior must see: empty diff, AI attribution in commits, stale base, ... */
+  warnings: string[];
+}
+
+/** One row of `status`: enough to decide what to wait for, nothing more. */
+export interface TaskSummaryRow {
+  task_id: string;
+  status: TaskStatus;
+  role: string | null;
+  model: string | null;
+  branch: string | null;
+  cost_usd: number;
+  minutes: number;
+  created_at: string;
 }
 
 /** Appended to every tool response for the owning session. */
