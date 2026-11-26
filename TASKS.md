@@ -19,6 +19,7 @@
 | T-005 | 2026-11-26 | Реализация этапа 1: ядро на одной машине | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done (ретроспектива в плане) |
 | T-006 | 2026-11-27 | TD-001: типизировать тесты (tsconfig.test.json, шаг в typecheck/CI) | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
 | T-007 | 2026-11-27 | TD-005: проверить автоподключение плагина через claude plugin в init | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
+| T-011 | 2026-11-27 | Спека этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/specs/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
 
 ## 📦 Backlog
 
