@@ -18,6 +18,10 @@
     "pino": "^10.4.0",
     "smol-toml": "^1.9.1",
     "yaml": "^2.9.1",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@pi-hub/pi-extension": "workspace:*"
+  },
+  "devDependencies": {
+    "@pi-hub/fake-worker": "workspace:*"
   }
 }

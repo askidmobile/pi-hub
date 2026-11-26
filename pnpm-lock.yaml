@@ -209,6 +209,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@4.6.7)
+      '@pi-hub/pi-extension':
+        specifier: workspace:*
+        version: link:../pi-extension
       '@pi-hub/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -227,12 +230,12 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
-
-  packages/pi-extension:
-    dependencies:
-      '@pi-hub/protocol':
+    devDependencies:
+      '@pi-hub/fake-worker':
         specifier: workspace:*
-        version: link:../protocol
+        version: link:../fake-worker
+
+  packages/pi-extension: {}
 
   packages/protocol:
     dependencies:
