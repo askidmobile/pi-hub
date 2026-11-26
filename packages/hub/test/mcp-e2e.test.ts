@@ -155,7 +155,6 @@ describe("MCP over shim with an in-process daemon", () => {
       await client.callTool({ name: "architect_mode", arguments: { mode: "off" } }),
     );
     expect(off.mode).toBe("off");
-    expect(await until(async () => true)).toBe(true);
     await until(() => listChanged.length > 1);
     expect(await toolNames(client)).toEqual(["architect_mode"]);
   });

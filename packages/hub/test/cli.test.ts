@@ -136,6 +136,14 @@ describe("pi-hub doctor", () => {
     expect(byName(checks, "Pi видит модель")).toBeUndefined();
   });
 
+  it("CLI: doctor exits right after the checks (no pending Pi stop timer)", () => {
+    setup("fake/success");
+    const t0 = Date.now();
+    execFileSync(process.execPath, [HUB_CLI, "doctor"], { env, encoding: "utf8" });
+    // The probe's stop grace is 4 s; a leaked timer kept the process alive for 2 s of it.
+    expect(Date.now() - t0).toBeLessThan(1_500);
+  });
+
   it("without init: config missing", async () => {
     const checks = await runDoctor(env);
     expect(byName(checks, "конфиг")?.level).toBe("fail");

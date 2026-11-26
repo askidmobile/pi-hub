@@ -235,11 +235,21 @@ export class PiRpcClient extends EventEmitter<PiRpcClientEvents> {
     if (this.exitError) return this.exitError;
     const child = this.child;
     child.stdin?.end();
-    const step = (ms: number) =>
-      Promise.race([
-        this.exited as Promise<PiExitedError>,
-        new Promise<null>((r) => setTimeout(() => r(null), ms)),
-      ]);
+    // The grace timer is cleared once Pi exits: a pending timer would keep a short-lived
+    // process (doctor, init) alive for the rest of the grace period.
+    const step = async (ms: number) => {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          this.exited as Promise<PiExitedError>,
+          new Promise<null>((r) => {
+            timer = setTimeout(() => r(null), ms);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
     let res = await step(graceMs / 2);
     if (res) return res;
     child.kill("SIGTERM");

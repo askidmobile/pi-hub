@@ -17,13 +17,13 @@
 | T-003 | 2026-11-26 | Спека этапа 1: ядро на одной машине | [``](docs/specs/) | ✅ Done (docs/specs/2026-11-26-stage-1-core.md) |
 | T-004 | 2026-11-26 | План этапа 1: /create-spec-plan | [`2026-11-26-stage-1-core.md`](docs/specs/2026-11-26-stage-1-core.md) | ✅ Done (docs/plans/2026-11-26-stage-1-core.md) |
 | T-005 | 2026-11-26 | Реализация этапа 1: ядро на одной машине | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done (ретроспектива в плане) |
+| T-006 | 2026-11-27 | TD-001: типизировать тесты (tsconfig.test.json, шаг в typecheck/CI) | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
+| T-007 | 2026-11-27 | TD-005: проверить автоподключение плагина через claude plugin в init | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
 
 ## 📦 Backlog
 
 | ID  | Date | Task | Plan | Note |
 | --- | ---- | ---- | ---- | ---- |
-| T-006 | 2026-11-27 | TD-001: типизировать тесты (tsconfig.test.json, шаг в typecheck/CI) | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | до этапа 2, Medium |
-| T-007 | 2026-11-27 | TD-005: проверить автоподключение плагина через claude plugin в init | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | до этапа 2, Medium |
 | T-008 | 2026-11-27 | TD-002: очистить таймер ensureSummary в finally | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | Low |
 | T-009 | 2026-11-27 | TD-003: убрать as never в регистрации инструментов фасада | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | Low |
 | T-010 | 2026-11-27 | TD-004: сокет без окна до chmod 0600 (каталог 0700 или umask) | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | Low |
