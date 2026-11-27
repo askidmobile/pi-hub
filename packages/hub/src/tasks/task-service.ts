@@ -10,6 +10,7 @@ import {
 } from "@pi-hub/protocol";
 import { HubError } from "../errors.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
+import { QualityGate } from "../quality/quality-gate.js";
 import { ModelSelectionError, resolveModel } from "../router/model-resolver.js";
 import type { TaskPatch, TaskRow } from "../storage/repos.js";
 import { gitTopLevel } from "../workspaces/repo.js";
@@ -63,7 +64,10 @@ export interface SendResult {
 const SENDABLE: ReadonlySet<TaskStatus> = new Set(["needs_input", "done", "failed", "interrupted"]);
 export const MERGED_BRANCH_WARNING = "ветка уже слита: новые коммиты нужно слить заново";
 
-export type TaskServiceDeps = Omit<RunnerDeps, "transition">;
+export type TaskServiceDeps = Omit<RunnerDeps, "transition" | "quality"> & {
+  /** One gate per hub: it holds the per-project lock (FR-114). */
+  quality?: QualityGate;
+};
 
 export interface TaskServiceEvents {
   changed: [taskId: string, status: TaskStatus];
@@ -78,9 +82,20 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
   private readonly pending = new Map<string, RunMode>();
   private closed = false;
 
+  private readonly quality: QualityGate;
+
   constructor(private readonly deps: TaskServiceDeps) {
     super();
     this.setMaxListeners(0);
+    this.quality =
+      deps.quality ??
+      new QualityGate({
+        wm: deps.wm,
+        repos: deps.repos,
+        logsDir: deps.paths.logsDir,
+        logger: deps.logger,
+        timeoutMs: deps.timing?.qualityTimeoutMs,
+      });
   }
 
   // --- status machine ---
@@ -317,7 +332,11 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     if (!this.transition(taskId, first, { started_at: new Date().toISOString() })) return;
     const task = this.deps.repos.getTask(taskId) as TaskRow;
     const run = new WorkerRun(
-      { ...this.deps, transition: (id, to, p) => this.transition(id, to, p) },
+      {
+        ...this.deps,
+        quality: this.quality,
+        transition: (id, to, p) => this.transition(id, to, p),
+      },
       task,
       mode,
     );

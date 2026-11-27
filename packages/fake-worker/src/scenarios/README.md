@@ -8,3 +8,6 @@ See `SCENARIOS` there for the list.
   `clarify-edit` (same, but edits a file during the plan), `text-question` (first turn ends
   with a question in text, the next prompt is the answer), `foreign-dialog` (a `confirm`
   dialog that is not a pi-hub question; the hub must refuse it).
+- Stage 2 quality (the project check fails while `broken.txt` exists): `quality-fix` (adds
+  `broken.txt`, removes it after the fix message), `quality-broken` (never fixes),
+  `skip-test` (commits a test with `it.skip`).

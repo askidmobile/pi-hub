@@ -4,6 +4,7 @@ import { parseJsonList, type TaskRow, type UsageTotals } from "../storage/repos.
 
 /** The senior reads only this (spec FR-017): keep it under ~2 KB. */
 export const MAX_CHANGED_FILES = 50;
+export const MAX_ENVELOPE_BYTES = 2048;
 
 export function taskMinutes(
   task: Pick<TaskRow, "started_at" | "finished_at">,
@@ -19,6 +20,40 @@ export function capFiles(files: string[], max = MAX_CHANGED_FILES): string[] {
 }
 
 export function buildEnvelope(input: {
+  task: TaskRow;
+  usage: UsageTotals;
+  sessionTotalUsd: number;
+  changedFiles: string[];
+  questions?: { asked: number; answered: number };
+}): ResultEnvelope {
+  return fitEnvelope(rawEnvelope(input));
+}
+
+/**
+ * Keeps the envelope within 2 KB (FR-127): quality issues are shortened first (the full
+ * output is in `quality.log_path`), then dropped from the end, then the file list is cut.
+ */
+export function fitEnvelope(env: ResultEnvelope, max = MAX_ENVELOPE_BYTES): ResultEnvelope {
+  const size = (e: ResultEnvelope) => Buffer.byteLength(JSON.stringify(e));
+  if (size(env) <= max) return env;
+  const out: ResultEnvelope = {
+    ...env,
+    quality: { ...env.quality, issues: [...env.quality.issues] },
+  };
+  for (const len of [120, 80]) {
+    out.quality.issues = out.quality.issues.map((i) =>
+      i.length > len ? `${i.slice(0, len - 1)}…` : i,
+    );
+    if (size(out) <= max) return out;
+  }
+  while (out.quality.issues.length > 1 && size(out) > max) out.quality.issues.pop();
+  for (let n = Math.min(out.changed_files.length, 20); n >= 5 && size(out) > max; n -= 5) {
+    out.changed_files = capFiles(env.changed_files, n);
+  }
+  return out;
+}
+
+function rawEnvelope(input: {
   task: TaskRow;
   usage: UsageTotals;
   sessionTotalUsd: number;

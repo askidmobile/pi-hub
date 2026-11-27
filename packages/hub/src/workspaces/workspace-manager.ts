@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { findAttribution } from "./attribution.js";
 import { GitError, GitLock, git } from "./git.js";
@@ -22,6 +23,21 @@ export interface SetupResult {
   /** First error-looking lines (or the tail) of the output, for the envelope/failure reason. */
   excerpt: string;
   timedOut: boolean;
+}
+
+export interface CommandResult {
+  ok: boolean;
+  exitCode: number | null;
+  timedOut: boolean;
+  /** Combined stdout and stderr, last bytes only. */
+  output: string;
+  durationMs: number;
+  spawnError?: string;
+}
+
+export interface DiffEntry {
+  status: string;
+  file: string;
 }
 
 export interface CommitInfo {
@@ -93,13 +109,32 @@ export class WorkspaceManager {
     env: NodeJS.ProcessEnv,
     timeoutMs = 15 * 60_000,
   ): Promise<SetupResult> {
+    return this.runCommand(path, command, env, timeoutMs).then((r) => ({
+      ok: r.ok,
+      exitCode: r.exitCode,
+      excerpt: r.ok ? "" : (r.spawnError ?? errorExcerpt(r.output)),
+      timedOut: r.timedOut,
+    }));
+  }
+
+  /**
+   * Runs a shell command in its own process group (setup, quality gate). On timeout the whole
+   * tree is killed, not only `sh`: dash on Linux forks the command, and an orphaned grandchild
+   * would keep the pipes open. The output keeps the last `maxOutput` bytes.
+   */
+  runCommand(
+    path: string,
+    command: string,
+    env: NodeJS.ProcessEnv,
+    timeoutMs: number,
+    maxOutput = 2 * 1024 * 1024,
+  ): Promise<CommandResult> {
+    const started = Date.now();
     return new Promise((resolve) => {
-      // Own process group: on timeout the whole tree is killed, not only `sh` (dash on Linux
-      // forks the command, and an orphaned grandchild would keep the pipes open).
       const child = spawn("sh", ["-c", command], { cwd: path, env, detached: true });
       let output = "";
       const collect = (b: Buffer) => {
-        output = (output + b.toString("utf8")).slice(-256 * 1024);
+        output = (output + b.toString("utf8")).slice(-maxOutput);
       };
       child.stdout.on("data", collect);
       child.stderr.on("data", collect);
@@ -112,16 +147,74 @@ export class WorkspaceManager {
           child.kill("SIGKILL");
         }
       }, timeoutMs);
-      child.on("close", (code) => {
+      const done = (exitCode: number | null, spawnError?: string) => {
         clearTimeout(timer);
-        const ok = code === 0 && !timedOut;
-        resolve({ ok, exitCode: code, excerpt: ok ? "" : errorExcerpt(output), timedOut });
-      });
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        resolve({ ok: false, exitCode: null, excerpt: err.message, timedOut: false });
-      });
+        resolve({
+          ok: exitCode === 0 && !timedOut,
+          exitCode,
+          timedOut,
+          output,
+          durationMs: Date.now() - started,
+          ...(spawnError ? { spawnError } : {}),
+        });
+      };
+      child.on("close", (code) => done(code));
+      child.on("error", (err) => done(null, err.message));
     });
+  }
+
+  /** A detached worktree on `commit` for the base quality check (plan PD-106). */
+  async createBaselineWorktree(
+    repoRoot: string,
+    projectId: string,
+    commit: string,
+  ): Promise<string> {
+    const path = join(
+      this.worktreesDir,
+      projectId,
+      `_base-${commit.slice(0, 12)}-${randomUUID().slice(0, 8)}`,
+    );
+    mkdirSync(dirname(path), { recursive: true });
+    await this.lock.run(repoRoot, () =>
+      git(repoRoot, ["worktree", "add", "-q", "--detach", path, commit]),
+    );
+    return path;
+  }
+
+  async removeWorktree(repoRoot: string, path: string): Promise<void> {
+    await this.lock.run(repoRoot, async () => {
+      await git(repoRoot, ["worktree", "remove", "--force", path]).catch(() => undefined);
+      rmSync(path, { recursive: true, force: true });
+      await git(repoRoot, ["worktree", "prune"]).catch(() => undefined);
+    });
+  }
+
+  /** `git diff --name-status base...HEAD`: status letter (A, M, D, R…) and the path. */
+  async diffNameStatus(path: string, baseCommit: string): Promise<DiffEntry[]> {
+    const out = await git(path, ["diff", "--name-status", "--no-renames", `${baseCommit}...HEAD`]);
+    return out
+      ? out.split("\n").map((l) => {
+          const [status = "", ...rest] = l.split("\t");
+          return { status: status.charAt(0), file: rest.join("\t") };
+        })
+      : [];
+  }
+
+  /** Lines added on the task branch, per file (test-tampering check, FR-121). */
+  async addedLines(path: string, baseCommit: string): Promise<Map<string, string[]>> {
+    const out = await git(path, ["diff", "-U0", "--no-color", `${baseCommit}...HEAD`]);
+    const map = new Map<string, string[]>();
+    let file: string | undefined;
+    for (const line of out.split("\n")) {
+      if (line.startsWith("+++ ")) {
+        file = line.startsWith("+++ b/") ? line.slice(6) : undefined;
+      } else if (file && line.startsWith("+")) {
+        const list = map.get(file) ?? [];
+        list.push(line.slice(1));
+        map.set(file, list);
+      }
+    }
+    return map;
   }
 
   async isDirty(path: string): Promise<boolean> {

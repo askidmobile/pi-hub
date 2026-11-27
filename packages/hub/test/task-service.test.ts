@@ -33,7 +33,7 @@ describe("TaskService (fake worker)", () => {
       status: "done",
       branch: "pi/t_0001",
       changed_files: ["hello.txt"],
-      quality: { status: "SKIPPED", issues: [] },
+      quality: { status: "SKIPPED", issues: ["команды проверки не заданы в .pi-hub.toml"] },
       warnings: [],
     });
     expect(env.summary).toContain("Added hello.txt");

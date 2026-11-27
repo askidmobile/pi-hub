@@ -29,6 +29,9 @@ export const SCENARIOS = [
   "clarify-edit",
   "text-question",
   "foreign-dialog",
+  "quality-fix",
+  "quality-broken",
+  "skip-test",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -181,6 +184,26 @@ async function runScenario(): Promise<void> {
       assistant("Done.\n\nSUMMARY:\n- Dialog handled.", 0.001);
       break;
     }
+    // Quality scenarios: the project check fails while `broken.txt` exists.
+    case "quality-fix":
+    case "quality-broken":
+      if (!lastPrompt.startsWith("The quality check failed")) {
+        writeHello();
+        commitFile("broken.txt", "breaks the check\n", "Add hello.txt and broken.txt");
+        assistant("Done.\n\nSUMMARY:\n- Added hello.txt.", 0.001);
+      } else if (scenario === "quality-fix") {
+        git(["rm", "-q", "broken.txt"]);
+        git(["commit", "-q", "-m", "Remove broken.txt"]);
+        assistant("Fixed.\n\nSUMMARY:\n- Removed broken.txt, the check passes.", 0.001);
+      } else {
+        assistant("I could not fix it.\n\nSUMMARY:\n- The check still fails.", 0.001);
+      }
+      break;
+    case "skip-test":
+      mkdirSync(join(process.cwd(), "src"), { recursive: true });
+      commitFile("src/math.test.ts", 'it.skip("adds", () => {});\n', "Skip the failing math test");
+      assistant("Done.\n\nSUMMARY:\n- Skipped a test.", 0.001);
+      break;
     case "text-question":
       if (turn === 1) {
         assistant("I looked at the repo.\n\nShould the file be named a.txt or b.txt?", 0.001);

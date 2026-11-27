@@ -98,3 +98,44 @@ export async function finalizeWorkspace(input: {
   if (!summary) warnings.push("воркер не написал итог");
   return { summary, warnings, changedFiles };
 }
+
+// --- test tampering (stage 2 FR-121) ---
+
+const TEST_FILE_RE =
+  /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/;
+const SKIP_MARK_RE =
+  /\b(describe|it|test|context)\.(skip|only)\b|\bx(it|describe|test)\s*\(|@pytest\.mark\.(skip|xfail)\b|@unittest\.skip|\bt\.Skip(Now|f)?\(|@Disabled\b/;
+
+export function isTestFile(path: string): boolean {
+  return TEST_FILE_RE.test(path);
+}
+
+/**
+ * Files where tests were deleted or skip/only markers were added. The verdict does not
+ * change: the warning goes to the architect (D-114).
+ */
+export function detectTestTampering(
+  diff: { status: string; file: string }[],
+  added: Map<string, string[]>,
+): string[] {
+  const files = new Set<string>();
+  for (const d of diff) if (d.status === "D" && isTestFile(d.file)) files.add(d.file);
+  for (const [file, lines] of added) if (lines.some((l) => SKIP_MARK_RE.test(l))) files.add(file);
+  return [...files].sort();
+}
+
+export function tamperingWarning(files: string[]): string | null {
+  if (!files.length) return null;
+  const list = files.slice(0, 5).join(", ") + (files.length > 5 ? ", …" : "");
+  return `изменены или отключены тесты: ${list}`;
+}
+
+/** The message of the automatic fix round (FR-113). */
+export function qualityFixMessage(issues: string[], logPath: string | null): string {
+  return [
+    "The quality check failed after your work. Fix these problems in the same branch:",
+    ...issues.map((i) => `- ${i}`),
+    ...(logPath ? [`Full output: ${logPath}`] : []),
+    "Do not delete, skip or weaken tests. Commit the fix and end with a `SUMMARY:` block.",
+  ].join("\n");
+}

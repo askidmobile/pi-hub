@@ -10,6 +10,7 @@ import { createMasker, maskDeep } from "../log.js";
 import type { ExtensionUiRequest } from "../pi-rpc/events.js";
 import { allowlistedEnv, buildWorkerLaunch } from "../pi-rpc/launcher.js";
 import { PiExitedError, PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
+import { newFailures, type QualityGate, qualityCommands } from "../quality/quality-gate.js";
 import { parseModelRef } from "../router/model-resolver.js";
 import {
   parseJsonList,
@@ -19,7 +20,14 @@ import {
   type TaskRow,
 } from "../storage/repos.js";
 import type { WorkspaceManager } from "../workspaces/workspace-manager.js";
-import { ensureSummary, finalizeWorkspace } from "./finalize.js";
+import {
+  detectTestTampering,
+  ensureSummary,
+  type FinalizeResult,
+  finalizeWorkspace,
+  qualityFixMessage,
+  tamperingWarning,
+} from "./finalize.js";
 import { planPhaseMessage, writeWorkerPrompt } from "./prompt.js";
 import {
   answerAsMessage,
@@ -29,6 +37,7 @@ import {
 } from "./questions.js";
 
 export const REPORT_ASSUMPTION_TOOL = "report_assumption";
+export const SECOND_TRY_WARNING = "проверка прошла со второй попытки";
 
 export interface RunnerDeps {
   repos: Repos;
@@ -37,10 +46,16 @@ export interface RunnerDeps {
   secrets: Readonly<Record<string, string>>;
   wm: WorkspaceManager;
   accounting: Accounting;
+  quality: QualityGate;
   logger: Logger;
   pi: { bin: string; binArgs?: string[]; extensionPath: string; extraExtensions?: string[] };
   /** Test hooks; production uses config limits. */
-  timing?: { timeLimitMs?: number; summaryTimeoutMs?: number; stopGraceMs?: number };
+  timing?: {
+    timeLimitMs?: number;
+    summaryTimeoutMs?: number;
+    stopGraceMs?: number;
+    qualityTimeoutMs?: number;
+  };
   transition: (taskId: string, to: TaskStatus, patch?: TaskPatch) => boolean;
 }
 
@@ -301,6 +316,67 @@ export class WorkerRun {
     return `${text}\n\n⚠ в фазе плана изменены файлы: ${list}`;
   }
 
+  /**
+   * Prompts the worker and handles its questions until it finishes without one (plan without
+   * `ask`, text question FR-120). False when the run is over (failed, cancelled, interrupted).
+   */
+  private async converse(client: PiRpcClient, first: string): Promise<boolean> {
+    const { deps, task } = this;
+    let message = first;
+    for (;;) {
+      const settled = client.waitSettled();
+      await client.prompt(message);
+      this.resumeTimer();
+      const res = await settled;
+      this.pauseTimer();
+      if (this.cancelled || this.interrupted) return false;
+      if (this.stopReason) {
+        this.fail(this.stopReason);
+        return false;
+      }
+      if (res.aborted) {
+        this.fail("воркер прервал работу");
+        return false;
+      }
+      const text = await client.getLastAssistantText();
+      const status = deps.repos.getTask(task.id)?.status;
+      let question: { kind: "plan" | "text"; text: string } | undefined;
+      if (status === "planning") {
+        const plan = text?.trim() || "(воркер закончил фазу плана без текста)";
+        question = { kind: "plan", text: await this.withPlanWarning(plan) };
+      } else {
+        const tq = detectTextQuestion(text);
+        if (tq) question = { kind: "text", text: tq };
+      }
+      if (!question) return true;
+      const answer = await this.waitForPromptAnswer(question.kind, question.text);
+      if (answer === null) {
+        if (this.cancelled || this.interrupted) return false;
+        throw this.exitWhileWaiting ?? new Error("ожидание ответа прервано");
+      }
+      message = answer;
+    }
+  }
+
+  /** `checking`: summary, auto-commit, attribution and diff warnings (FR-016, FR-026). */
+  private async finalize(
+    client: PiRpcClient,
+    repoRoot: string,
+    worktree: string,
+    baseCommit: string,
+  ): Promise<FinalizeResult> {
+    this.deps.transition(this.task.id, "checking");
+    const finalText = await ensureSummary(client, this.deps.timing?.summaryTimeoutMs ?? 120_000);
+    return finalizeWorkspace({
+      wm: this.deps.wm,
+      taskId: this.task.id,
+      repoRoot,
+      worktree,
+      baseCommit,
+      finalText,
+    });
+  }
+
   private async run(): Promise<void> {
     const { deps, task } = this;
     const project = deps.repos.getProject(task.project_id);
@@ -397,7 +473,7 @@ export class WorkerRun {
       if (resuming && task.pi_session_path) await client.switchSession(task.pi_session_path);
       else if (state.sessionFile) this.patch({ pi_session_path: state.sessionFile });
 
-      let message: string =
+      const message: string =
         this.mode.kind === "fresh"
           ? this.mode.clarify
             ? planPhaseMessage(task.task_text)
@@ -408,52 +484,49 @@ export class WorkerRun {
       const maxMinutes = deps.config.limits.max_task_minutes;
       this.timeLimitMs = deps.timing?.timeLimitMs ?? (maxMinutes ? maxMinutes * 60_000 : undefined);
 
-      // Turns until the worker finishes without a question (plan without ask, FR-120).
-      for (;;) {
-        const settled = client.waitSettled();
-        await client.prompt(message);
-        this.resumeTimer();
-        const res = await settled;
-        this.pauseTimer();
-        if (this.cancelled || this.interrupted) return;
-        if (this.stopReason) return this.fail(this.stopReason);
-        if (res.aborted) return this.fail("воркер прервал работу");
-
-        const text = await client.getLastAssistantText();
-        const status = deps.repos.getTask(task.id)?.status;
-        let question: { kind: "plan" | "text"; text: string } | undefined;
-        if (status === "planning") {
-          const plan = text?.trim() || "(воркер закончил фазу плана без текста)";
-          question = { kind: "plan", text: await this.withPlanWarning(plan) };
-        } else {
-          const tq = detectTextQuestion(text);
-          if (tq) question = { kind: "text", text: tq };
-        }
-        if (!question) break;
-        const answer = await this.waitForPromptAnswer(question.kind, question.text);
-        if (answer === null) {
-          if (this.cancelled || this.interrupted) return;
-          throw this.exitWhileWaiting ?? new Error("ожидание ответа прервано");
-        }
-        message = answer;
-      }
-
-      deps.transition(task.id, "checking");
-      const finalText = await ensureSummary(client, deps.timing?.summaryTimeoutMs ?? 120_000);
-      const fin = await finalizeWorkspace({
-        wm: deps.wm,
+      const qInput = {
         taskId: task.id,
+        projectId: project.id,
         repoRoot: project.repo_root,
         worktree: ws.path,
         baseCommit,
-        finalText,
-      });
+        project: projectCfg,
+      };
+      // The base check runs while the worker works (plan PD-106).
+      if (qualityCommands(projectCfg).length) void deps.quality.baseline(qInput);
+
+      if (!(await this.converse(client, message))) return;
+
+      let fin = await this.finalize(client, project.repo_root, ws.path, baseCommit);
+      let quality = await deps.quality.check({ ...qInput, attempt: 1 });
+      const warnings = [...fin.warnings];
+      // One automatic fix round for errors that did not exist on the base (FR-113, D-101).
+      if (quality.status === "FAIL" && newFailures(quality).length) {
+        this.log.info({ issues: quality.issues.length }, "quality failed: automatic fix round");
+        deps.transition(task.id, "running");
+        if (!(await this.converse(client, qualityFixMessage(quality.issues, quality.logPath))))
+          return;
+        fin = await this.finalize(client, project.repo_root, ws.path, baseCommit);
+        warnings.push(...fin.warnings);
+        quality = await deps.quality.check({ ...qInput, attempt: 2 });
+        if (quality.status === "PASS") warnings.push(SECOND_TRY_WARNING);
+      }
+      const tampered = tamperingWarning(
+        detectTestTampering(
+          await deps.wm.diffNameStatus(ws.path, baseCommit),
+          await deps.wm.addedLines(ws.path, baseCommit),
+        ),
+      );
+      if (tampered) warnings.push(tampered);
+
       const current = deps.repos.getTask(task.id);
-      const warnings = [...new Set([...parseJsonList(current?.warnings_json), ...fin.warnings])];
+      const all = [...new Set([...parseJsonList(current?.warnings_json), ...warnings])];
       deps.transition(task.id, "done", {
         summary: fin.summary,
-        quality_status: "SKIPPED",
-        warnings_json: JSON.stringify(warnings),
+        quality_status: quality.status,
+        quality_issues_json: JSON.stringify(quality.issues),
+        quality_log_path: quality.logPath,
+        warnings_json: JSON.stringify(all),
         failure_reason: null,
         finished_at: new Date().toISOString(),
       });

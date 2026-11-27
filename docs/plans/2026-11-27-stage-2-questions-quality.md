@@ -71,14 +71,14 @@ graph TD
 - [x] `config/prices.ts` — загрузка `~/.pi-hub/prices.yaml` (zod-схема по `config/prices.example.yaml`), перечитывание по `mtime`, поиск цены по `provider/model`.
 - [x] `pi-rpc/pi-rpc-client.ts` — `respondUi(id, value | cancelled)`; ожидание `agent_settled` можно запускать повторно (несколько `prompt` в одном процессе).
 - [x] `tasks/questions.ts` (новый) — `QuestionService`: разбор диалога pi-hub (маркер в `title`), запись вопроса, ответ, отказ на чужие диалоги, текст для хука и строки вопросов.
-- [ ] `tasks/worker-runner.ts` — жизненный цикл с живым Pi: обработка `ui_request` (→ `needs_input`, пауза таймера), `answer(text)`; `clarify` (`planning`); вопрос текстом (FR-120) до `ensureSummary`; финализация → проверка качества → авто-круг → итог; остановка Pi только в конце; пределы — только если заданы.
-- [ ] `tasks/finalize.ts` — `detectTextQuestion(finalText)`; `detectTestTampering(diff)` (удалённые файлы тестов, пометки пропуска); предупреждение о файлах, изменённых в фазе плана.
+- [x] `tasks/worker-runner.ts` — жизненный цикл с живым Pi: обработка `ui_request` (→ `needs_input`, пауза таймера), `answer(text)`; `clarify` (`planning`); вопрос текстом (FR-120) до `ensureSummary`; финализация → проверка качества → авто-круг → итог; остановка Pi только в конце; пределы — только если заданы.
+- [x] `tasks/finalize.ts` — `detectTextQuestion(finalText)`; `detectTestTampering(diff)` (удалённые файлы тестов, пометки пропуска); предупреждение о файлах, изменённых в фазе плана.
 - [x] `tasks/prompt.ts` + `packages/pi-extension/src/worker-prompt.md` — правила `ask` (FR-115), запрет трогать тесты ради проверки (FR-121), отдельный блок для фазы плана (`clarify`).
 - [x] `tasks/task-service.ts` — `send`: `needs_input` (живой процесс → ответ; `interrupted` с открытым вопросом → продолжение с текстом «вопрос/ответ»), `done` (доработка, `attempt+1`, предупреждение о слитой ветке); `waitFor` возвращает вопрос; `pump()` не считает задачи в `needs_input`; `start(clarify)`; `recover()` сохраняет открытый вопрос.
-- [ ] `quality/quality-gate.ts` — реализация `QualityGate`: команды по очереди в worktree, окружение по белому списку, таймаут с убийством группы, полный вывод в `logs/<task_id>.quality.log`, `issues` ≤ 10 × 200; проверка базы во временном worktree (с `setup`) и кэш в `quality_baselines`; блокировка на проект.
-- [ ] `workspaces/workspace-manager.ts` — общий запуск команды (`runCommand`) для `setup` и проверки; временный worktree базы (`createBaselineWorktree`/удаление); `diffNameStatus(base)`; `isMergedInto(branch, base)`.
+- [x] `quality/quality-gate.ts` — реализация `QualityGate`: команды по очереди в worktree, окружение по белому списку, таймаут с убийством группы, полный вывод в `logs/<task_id>.quality.log`, `issues` ≤ 10 × 200; проверка базы во временном worktree (с `setup`) и кэш в `quality_baselines`; блокировка на проект.
+- [x] `workspaces/workspace-manager.ts` — общий запуск команды (`runCommand`) для `setup` и проверки; временный worktree базы (`createBaselineWorktree`/удаление); `diffNameStatus(base)`; `isMergedInto(branch, base)`.
 - [ ] `accounting/accounting.ts` — цепочка источников (FR-116), `unknown`, цена на момент шага, итог по сессии с числом неизвестных шагов; `formatCostLine` с «цена неизвестна».
-- [ ] `tasks/envelope.ts` — `quality.issues`, `quality.log_path`, `questions`, `attempt`; контроль 2 КБ.
+- [x] `tasks/envelope.ts` — `quality.issues`, `quality.log_path`, `questions`, `attempt`; контроль 2 КБ.
 - [ ] `facade/mcp-facade.ts` — `start.clarify`; `wait` с вопросом; строка ожидающих вопросов, добавляемая ко всем ответам сессии (≤ 300 байт); новый текст `send`.
 - [ ] `sessions/hook-resolver.ts` (новый) — предки PID через `ps -o ppid= -p` (до 10 уровней, кэш на запрос), сопоставление с `parent_pid` сессий; запасной путь — единственная подключённая сессия Claude Code проекта по `cwd`.
 - [ ] `transport/unix-server.ts` — разбор первой строки: `hello` (как раньше) или `hook_query` → одна строка `HookReply` и закрытие соединения; бюджет ответа 50 мс.
@@ -154,7 +154,7 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 ### Fake worker (`packages/fake-worker/src/index.ts`)
 
-- [ ] Сценарии `ask`, `ask-twice`, `clarify`, `text-question`, `quality-fix`, `quality-broken`, `skip-test`; поддержка `extension_ui_request` → ожидание `extension_ui_response` и повторных `prompt` в одном процессе.
+- [x] Сценарии `ask`, `ask-twice`, `clarify`, `text-question`, `quality-fix`, `quality-broken`, `skip-test`; поддержка `extension_ui_request` → ожидание `extension_ui_response` и повторных `prompt` в одном процессе.
 
 ### Claude Code plugin (`plugins/claude-code`)
 
@@ -212,13 +212,18 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 - **Independent check:** интеграционные тесты сценариев 1 и 3 на уровне `TaskService` зелёные.
 
 ### Phase 3: Проверка качества (estimate: 10 h)
-- [ ] `WorkspaceManager.runCommand` (общий для `setup`), временный worktree базы, `diffNameStatus`, `isMergedInto`
-- [ ] `quality/quality-gate.ts`: команды, таймаут, лог, `issues`, `SKIPPED`; блокировка на проект (FR-111, FR-112, FR-114)
-- [ ] Проверка базы с кэшем `quality_baselines` (FR-119)
-- [ ] Авто-круг в `WorkerRun` (FR-113) и защита тестов (FR-121); итоговые поля задачи
-- [ ] Конверт: `quality.issues`, `log_path`, `questions`, `attempt` (FR-127)
-- [ ] Фейковый воркер: `quality-fix`, `quality-broken`, `skip-test`
-- [ ] Тесты: PASS; FAIL → авто-круг → PASS с предупреждением; FAIL дважды; `SKIPPED` без команд; ошибка была на базе → без авто-круга, кэш базы переиспользован второй задачей; таймаут команды с дочерним процессом; две задачи одного проекта проверяются по очереди; отключённый тест → предупреждение при PASS; конверт ≤ 2 КБ
+- [x] `WorkspaceManager.runCommand` (общий для `setup`), временный worktree базы, `diffNameStatus`, `isMergedInto`
+- [x] `quality/quality-gate.ts`: команды, таймаут, лог, `issues`, `SKIPPED`; блокировка на проект (FR-111, FR-112, FR-114)
+- [x] Проверка базы с кэшем `quality_baselines` (FR-119)
+- [x] Авто-круг в `WorkerRun` (FR-113) и защита тестов (FR-121); итоговые поля задачи
+- [x] Конверт: `quality.issues`, `log_path`, `questions`, `attempt` (FR-127)
+- [x] Фейковый воркер: `quality-fix`, `quality-broken`, `skip-test`
+- [x] Тесты: PASS; FAIL → авто-круг → PASS с предупреждением; FAIL дважды; `SKIPPED` без команд; ошибка была на базе → без авто-круга, кэш базы переиспользован второй задачей; таймаут команды с дочерним процессом; две задачи одного проекта проверяются по очереди; отключённый тест → предупреждение при PASS; конверт ≤ 2 КБ
+- deviated: `runSetup` стал обёрткой над общим `runCommand` (полный вывод до 2 МБ, длительность); для FR-121 добавлен `WorkspaceManager.addedLines` (добавленные строки диффа по файлам).
+- deviated: `QualityGate` — класс, один на `TaskService` (держит блокировку на проект); `TaskServiceDeps.quality` необязательный, по умолчанию создаётся сервисом. Интерфейс `check(taskId, changedFiles)` этапа 1 заменён: проверка идёт целиком (D-109), без списка файлов.
+- deviated: если `setup` на коммите базы упал, результат базы остаётся неизвестным и не считается «падало до задачи»: без зависимостей проверка базы ничего не говорит.
+- deviated: `detectTestTampering`, `tamperingWarning` и текст авто-круга `qualityFixMessage` — в `tasks/finalize.ts`; цикл ходов воркера вынесен в `WorkerRun.converse`, чтобы авто-круг шёл через тот же цикл (с вопросами).
+- deviated: конверт ужимается до 2 КБ (`fitEnvelope`): сначала укорачиваются замечания, затем отбрасываются с конца, затем режется список файлов. `SKIPPED` теперь несёт замечание «команды проверки не заданы в .pi-hub.toml» (тест этапа 1 обновлён).
 - **Independent check:** интеграционные тесты сценария 4 на уровне `TaskService` зелёные.
 
 ### Phase 4: Стоимость (estimate: 3 h)
@@ -254,30 +259,30 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | FR-102 ✅ | 2 | `tasks/questions.ts`, обработка `ui_request` в `WorkerRun` |
 | FR-103 🔶 | 2, 5 | `waitFor` с вопросом, фасад `wait` |
 | FR-104 ✅ | 2 | `TaskService.send` для `needs_input`, `respondUi` |
-| FR-105 🔶 | 1, 2 | `done → running`, `send` для `done` |
+| FR-105 ✅ | 1, 2 | `done → running`, `send` для `done` |
 | FR-106 ✅ | 2 | `recover()`, продолжение с «вопрос/ответ» |
 | FR-107 | 5 | строка ожидающих вопросов в фасаде |
 | FR-108 🔶 | 1, 5 | `HookQuery`, `hook-resolver.ts`, `unix-server.ts` |
 | FR-109 | 5 | `shim/hook.ts`, `hooks.json`, отметка доставки |
 | FR-110 | 5 | таймауты shim и сервера, `hooks.log` |
-| FR-111 | 3 | `quality-gate.ts`: команды, окружение, таймаут |
-| FR-112 | 3 | вердикт, лог, `issues` |
-| FR-113 | 3 | авто-круг в `WorkerRun` |
-| FR-114 | 3 | блокировка на проект |
+| FR-111 ✅ | 3 | `quality-gate.ts`: команды, окружение, таймаут |
+| FR-112 ✅ | 3 | вердикт, лог, `issues` |
+| FR-113 ✅ | 3 | авто-круг в `WorkerRun` |
+| FR-114 ✅ | 3 | блокировка на проект |
 | FR-115 ✅ | 2 | `worker-prompt.md` |
 | FR-116 🔶 | 1, 4 | `prices.ts`, цепочка источников, миграция `steps` |
 | FR-117 | 4 | `formatCostLine`, итог по сессии |
 | FR-118 ✅ | 1, 2 | необязательные пределы, пауза таймера в `needs_input` |
-| FR-119 | 3 | проверка базы, `quality_baselines` |
+| FR-119 ✅ | 3 | проверка базы, `quality_baselines` |
 | FR-120 ✅ | 2 | `detectTextQuestion` до `ensureSummary` |
-| FR-121 🔶 | 2, 3 | промпт, `detectTestTampering` |
+| FR-121 ✅ | 2, 3 | промпт, `detectTestTampering` |
 | FR-122 | 5 | запасной путь в `hook-resolver.ts` |
 | FR-123 ✅ | 2, 3 | `isMergedInto`, предупреждение в `send` |
 | FR-125 ✅ | 2 | `clarify`, фаза `planning` |
 | FR-126 | 5 | скил архитектора |
-| FR-127 | 3 | конверт |
+| FR-127 ✅ | 3 | конверт |
 | FR-128 | 4, 5 | `doctor`: цены и хук |
-| FR-129 🔶 | 2, 3 | сценарии фейкового воркера |
+| FR-129 ✅ | 2, 3 | сценарии фейкового воркера |
 | FR-130 | 5 | `pi-hub status` |
 
 ## Complexity & principle deviations
@@ -335,3 +340,5 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | # | Description | Phase | Priority |
 |---|-------------|-------|----------|
 | TD-101 | Флаг `clarify` живёт только в памяти хаба (`pending`): если хаб перезапустится, пока задача ещё в `queued`, она начнётся без фазы плана. Нужна колонка в `tasks` (новая миграция) | 2 | Low |
+| TD-102 | Кэш проверки базы в `quality_baselines` привязан к имени команды (`test`), а не к её тексту: после правки команды в `.pi-hub.toml` на том же коммите базы используется старый результат | 3 | Low |
+| TD-103 | `cancel` во время проверки качества не останавливает запущенную команду: она доработает до конца или до таймаута, результат отбрасывается | 3 | Low |
