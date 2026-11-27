@@ -245,4 +245,4 @@ graph TD
 - [x] `usage_report`: тесты на выборку по scope/period, разрезы, неизвестные цены, ответ ≤ 2 КБ на 20 моделях и 10 ролях.
 - [x] Codex: `init` ставит профиль и сохраняет доверие при повторном запуске (тест на файле с `[hooks.state…]`); хук Stop с `--client codex` блокирует один раз (интеграционный тест через shim); ручной прогон в `codex --profile pi-hub`: вопрос воркера, хук Stop, ответ, итог.
 - [x] Живая проверка умного роутера: `pi-hub router test` и задача без `role` на 9router (`typesafe/jev-latest`) получает роль от System One.
-- [ ] `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm test` зелёные в CI.
+- [x] `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm test` зелёные в CI.
