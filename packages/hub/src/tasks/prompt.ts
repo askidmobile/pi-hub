@@ -50,3 +50,32 @@ export function planPhaseMessage(taskText: string): string {
     taskText,
   ].join("\n");
 }
+
+/**
+ * First message of the next model after escalation (stage 3 FR-202, D-202): the task, what
+ * the previous model reported and what the check still finds. It starts with `ESCALATION:`.
+ */
+export function escalationMessage(
+  taskText: string,
+  previousSummary: string,
+  issues: string[],
+  logPath: string | null,
+): string {
+  return [
+    "ESCALATION: another model worked on this task in the current branch, and the quality",
+    "check still fails after its fix round. Continue from the current branch: keep what is",
+    "useful in its commits, fix the problems below and finish the task.",
+    "",
+    "TASK:",
+    taskText,
+    "",
+    "PREVIOUS MODEL SUMMARY:",
+    previousSummary || "(none)",
+    "",
+    "THE QUALITY CHECK FAILS:",
+    ...issues.map((i) => `- ${i}`),
+    ...(logPath ? [`Full output: ${logPath}`] : []),
+    "",
+    "Do not delete, skip or weaken tests. Commit your work and end with a `SUMMARY:` block.",
+  ].join("\n");
+}

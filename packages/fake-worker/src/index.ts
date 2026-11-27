@@ -9,7 +9,7 @@
  * Single file, erasable TypeScript only: Node runs it directly (`node index.ts`) in tests.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const SCENARIOS = [
@@ -186,15 +186,19 @@ async function runScenario(): Promise<void> {
       assistant("Done.\n\nSUMMARY:\n- Dialog handled.", 0.001);
       break;
     }
-    // Quality scenarios: the project check fails while `broken.txt` exists.
+    // Quality scenarios: the project check fails while `broken.txt` exists. An escalation
+    // message (stage 3) is handled like the fix round: quality-fix repairs, quality-broken not.
     case "quality-fix":
     case "quality-broken":
-      if (!lastPrompt.startsWith("The quality check failed")) {
+      if (
+        !lastPrompt.startsWith("The quality check failed") &&
+        !lastPrompt.startsWith("ESCALATION:")
+      ) {
         writeHello();
         commitFile("broken.txt", "breaks the check\n", "Add hello.txt and broken.txt");
         assistant("Done.\n\nSUMMARY:\n- Added hello.txt.", 0.001);
       } else if (scenario === "quality-fix") {
-        git(["rm", "-q", "broken.txt"]);
+        if (existsSync(join(process.cwd(), "broken.txt"))) git(["rm", "-q", "broken.txt"]);
         git(["commit", "-q", "-m", "Remove broken.txt"]);
         assistant("Fixed.\n\nSUMMARY:\n- Removed broken.txt, the check passes.", 0.001);
       } else {

@@ -177,12 +177,15 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 - **Independent check:** `pnpm test`, `pnpm typecheck` зелёные; БД этапа 2 мигрирует.
 
 ### Phase 2: Эскалация (estimate: 8 h)
-- [ ] `router/escalation.ts` и прогоны моделей в `WorkerRun` (FR-202, FR-205)
-- [ ] Эскалация: новый процесс Pi на следующей модели, та же ветка; сообщение эскалации → `tasks/prompt.ts`; предупреждение и `models` в конверте (FR-204)
-- [ ] Исключения: ошибки с базы, модель от старшего, `send` на `done`, пустая цепочка, `cancel` во время эскалации (FR-203)
-- [ ] `first_try_pass` (FR-205, D-215)
-- [ ] Тесты на фейковом воркере: `quality-broken → quality-fix` в той же задаче и ветке, `wait` не возвращается до итога, стоимость обеих моделей; нет эскалации в каждом исключении; цепочка из двух эскалаций до конца → `FAIL`
+- [x] `router/escalation.ts` и прогоны моделей в `WorkerRun` (FR-202, FR-205)
+- [x] Эскалация: новый процесс Pi на следующей модели, та же ветка; сообщение эскалации → `tasks/prompt.ts`; предупреждение и `models` в конверте (FR-204)
+- [x] Исключения: ошибки с базы, модель от старшего, `send` на `done`, пустая цепочка, `cancel` во время эскалации (FR-203)
+- [x] `first_try_pass` (FR-205, D-215)
+- [x] Тесты на фейковом воркере: `quality-broken → quality-fix` в той же задаче и ветке, `wait` не возвращается до итога, стоимость обеих моделей; нет эскалации в каждом исключении; цепочка из двух эскалаций до конца → `FAIL`
 - **Independent check:** интеграционные тесты сценария 2 зелёные.
+- deviated: `send` на `interrupted` (в том числе после перезапуска хаба) может эскалировать — прерванный запуск доводится так же, как шёл бы; `send` на `done`/`failed` — без эскалации (FR-203). Флаг `escalate` в `RunMode.continue`.
+- deviated: прогон модели, оборванный отменой, сбоем или остановкой хаба, получает `finished_at` с пустым итогом; `send` на `done` продолжает последний прогон (та же модель), а не открывает новый.
+- deviated: запуск Pi вынесен в `WorkerRun.launchPi` (его вызывает и эскалация); номера проверок идут дальше по прогонам (`attempt 1.3`, `1.4` — после эскалации).
 
 ### Phase 3: Отчёт о расходах (estimate: 4 h)
 - [ ] `tasks/usage-report.ts`, `TaskService.usageReport`, инструмент в фасаде (FR-206)
@@ -226,10 +229,10 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | Requirement | Phase | Tasks |
 |-------------|-------|-------|
 | FR-201 | 1, 4, 7 | `RoleRule.description`, `escalate`; `doctor` о моделях ролей — 🔶 описание роли (фаза 1) |
-| FR-202 | 2 | эскалация в `WorkerRun`, `escalation.ts` |
-| FR-203 | 2 | исключения эскалации |
-| FR-204 | 2 | `models`, предупреждение, `routed_by = escalation` |
-| FR-205 | 1, 2 | `task_model_runs`, `first_try_pass` — 🔶 хранение (фаза 1) |
+| FR-202 | 2 | эскалация в `WorkerRun`, `escalation.ts` — ✅ |
+| FR-203 | 2 | исключения эскалации — ✅ |
+| FR-204 | 2 | `models`, предупреждение, `routed_by = escalation` — ✅ |
+| FR-205 | 1, 2 | `task_model_runs`, `first_try_pass` — ✅ |
 | FR-206 | 1, 3 | запросы отчёта, `usage-report.ts`, фасад — 🔶 запросы и тип (фаза 1) |
 | FR-207 | 0, 5 | профиль Codex |
 | FR-208 | 5 | `init` + `codex-profile.ts` |
@@ -296,4 +299,4 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 
 | # | Description | Phase | Priority |
 |---|-------------|-------|----------|
-| — | — | — | — |
+| TD-201 | Кэш проверки базы (`quality_baselines`) хранится по имени команды, а не по её тексту: если поменять команду в `.pi-hub.toml` без нового коммита базы, хаб берёт старый результат базы. Найдено тестом эскалации | 2 | Low |

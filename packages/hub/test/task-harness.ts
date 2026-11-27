@@ -40,6 +40,8 @@ export function makeHarness(
     noLimits?: boolean;
     /** Manual prices for accounting (`prices.yaml`). */
     prices?: PriceLookup;
+    /** Role table (default: `code` on fake/success). */
+    roles?: Record<string, { model: string; escalate?: string[] }>;
   } = {},
 ): Harness {
   const home = join(root, "h");
@@ -51,7 +53,7 @@ export function makeHarness(
   const paths = resolveHubPaths({ PI_HUB_HOME: home });
   const config = HubConfig.parse({
     allowed_repos: [git(repo, "rev-parse", "--show-toplevel")],
-    roles: { code: { model: "fake/success" } },
+    roles: opts.roles ?? { code: { model: "fake/success" } },
     default_role: "code",
     limits: opts.noLimits
       ? { max_workers_hub: opts.maxWorkers ?? 2 }
@@ -91,14 +93,15 @@ export async function connect(h: Harness, mode: "on" | "off" = "on"): Promise<st
   return session.id;
 }
 
+/** `model: null` starts by role (`extra.role` or default_role), as the router would. */
 export const start = (
   h: Harness,
-  model = "fake/success",
+  model: string | null = "fake/success",
   extra: Record<string, string | boolean> = {},
 ) =>
   h.service.start(h.sessionId, {
     task: "Create hello.txt",
-    model,
+    ...(model ? { model } : {}),
     repo: h.repo,
     base_branch: "main",
     ...extra,

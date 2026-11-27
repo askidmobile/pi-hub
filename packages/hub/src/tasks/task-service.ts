@@ -307,7 +307,12 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       patch.warnings_json = JSON.stringify(warnings);
     }
     repos.updateTask(taskId, patch);
-    this.pending.set(taskId, { kind: "continue", message: text });
+    // Only an interrupted run may still escalate; rework of done/failed stays on its model (FR-203).
+    this.pending.set(taskId, {
+      kind: "continue",
+      message: text,
+      escalate: task.status === "interrupted",
+    });
     this.launch(taskId);
     const status = repos.getTask(taskId)?.status ?? task.status;
     return { task_id: taskId, status, ...(warnings.length ? { warnings } : {}) };

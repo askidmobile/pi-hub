@@ -10,7 +10,13 @@ import { createMasker, maskDeep } from "../log.js";
 import type { ExtensionUiRequest } from "../pi-rpc/events.js";
 import { allowlistedEnv, buildWorkerLaunch } from "../pi-rpc/launcher.js";
 import { PiExitedError, PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
-import { newFailures, type QualityGate, qualityCommands } from "../quality/quality-gate.js";
+import {
+  newFailures,
+  type QualityGate,
+  type QualityRun,
+  qualityCommands,
+} from "../quality/quality-gate.js";
+import { escalationWarning, nextModel } from "../router/escalation.js";
 import { parseModelRef } from "../router/model-resolver.js";
 import {
   parseJsonList,
@@ -28,7 +34,7 @@ import {
   qualityFixMessage,
   tamperingWarning,
 } from "./finalize.js";
-import { planPhaseMessage, writeWorkerPrompt } from "./prompt.js";
+import { escalationMessage, planPhaseMessage, writeWorkerPrompt } from "./prompt.js";
 import {
   answerAsMessage,
   DIALOG_METHODS,
@@ -59,7 +65,13 @@ export interface RunnerDeps {
   transition: (taskId: string, to: TaskStatus, patch?: TaskPatch) => boolean;
 }
 
-export type RunMode = { kind: "fresh"; clarify?: boolean } | { kind: "continue"; message: string };
+/**
+ * `continue` may escalate only when the task was interrupted mid-run; a `send` on a
+ * finished or failed task reworks on the model it ended on (stage 3 FR-203).
+ */
+export type RunMode =
+  | { kind: "fresh"; clarify?: boolean }
+  | { kind: "continue"; message: string; escalate?: boolean };
 
 /**
  * One run of one task (spec FR-010..FR-027): worktree -> setup -> Pi -> events (log,
@@ -89,6 +101,8 @@ export class WorkerRun {
   private pendingAnswer: ((message: string | null) => void) | undefined;
   private exitWhileWaiting: PiExitedError | undefined;
   private isWaiting = false;
+  /** The model run of the live Pi process (stage 3 FR-205). */
+  private runSeq: number | undefined;
   private readonly assumptions: string[];
   readonly done: Promise<void>;
   private readonly log: Logger;
@@ -377,6 +391,73 @@ export class WorkerRun {
     });
   }
 
+  /**
+   * Starts Pi on `model` in the worktree and wires its events: log, steps and the cost
+   * limit, assumptions, dialogs. Escalation calls it again for the next model (PD-205).
+   */
+  private async launchPi(
+    model: string,
+    opts: { cwd: string; promptFile: string; mask: (s: string) => string; resuming: boolean },
+  ): Promise<PiRpcClient> {
+    const { deps, task } = this;
+    const { provider, modelId } = parseModelRef(model);
+    const client = new PiRpcClient(
+      buildWorkerLaunch({
+        bin: deps.pi.bin,
+        ...(deps.pi.binArgs ? { binArgs: deps.pi.binArgs } : {}),
+        provider,
+        modelId,
+        cwd: opts.cwd,
+        sessionDir: deps.paths.sessionsDir,
+        taskId: task.id,
+        extensionPath: deps.pi.extensionPath,
+        ...(deps.pi.extraExtensions ? { extraExtensions: deps.pi.extraExtensions } : {}),
+        promptFile: opts.promptFile,
+        piAgentDir: deps.paths.piAgentDir,
+        secrets: deps.secrets,
+      }),
+    );
+    this.client = client;
+    const mask = opts.mask;
+    client.on("record", (r) => this.writeLog(r, mask));
+    client.on("parse_error", (line, error) =>
+      this.writeLog({ type: "hub_parse_error", line, error }, mask),
+    );
+    client.on("event", (e) => {
+      if (e.kind === "assistant_message") {
+        const total = deps.accounting.record(task.id, e.message);
+        const maxUsd = deps.config.limits.max_task_usd;
+        if (maxUsd !== undefined && total !== null && total > maxUsd) {
+          this.stopFor(`лимит стоимости ${maxUsd} $ превышен (${total.toFixed(3)} $)`);
+        }
+      } else if (e.kind === "tool_start" && e.record.toolName === REPORT_ASSUMPTION_TOOL) {
+        const text = (e.record.args as { text?: unknown } | undefined)?.text;
+        if (typeof text === "string" && text.trim()) {
+          this.assumptions.push(text.trim());
+          this.patch({ assumptions_json: JSON.stringify(this.assumptions) });
+        }
+      } else if (e.kind === "ui_request") {
+        this.onUiRequest(e.record);
+      }
+    });
+    client.on("exit", (err) => {
+      if (!this.pendingAnswer || this.client !== client) return;
+      this.exitWhileWaiting = err;
+      this.releaseWait();
+    });
+    client.start();
+    if (client.pid) this.patch({ pid: client.pid });
+    const state = await client.getState();
+    if (opts.resuming && task.pi_session_path) await client.switchSession(task.pi_session_path);
+    else if (state.sessionFile) this.patch({ pi_session_path: state.sessionFile });
+    return client;
+  }
+
+  /** Ends the Pi process of a model before the next one starts (escalation). */
+  private async stopPi(client: PiRpcClient): Promise<void> {
+    if (!client.hasExited) await client.stop(this.grace).catch(() => undefined);
+  }
+
   private async run(): Promise<void> {
     const { deps, task } = this;
     const project = deps.repos.getProject(task.project_id);
@@ -423,55 +504,22 @@ export class WorkerRun {
         branch: ws.branch,
         base_branch: task.base_branch ?? "HEAD",
       });
-      const { provider, modelId } = parseModelRef(task.model ?? "");
-      const client = new PiRpcClient(
-        buildWorkerLaunch({
-          bin: deps.pi.bin,
-          ...(deps.pi.binArgs ? { binArgs: deps.pi.binArgs } : {}),
-          provider,
-          modelId,
-          cwd: ws.path,
-          sessionDir: deps.paths.sessionsDir,
-          taskId: task.id,
-          extensionPath: deps.pi.extensionPath,
-          ...(deps.pi.extraExtensions ? { extraExtensions: deps.pi.extraExtensions } : {}),
-          promptFile,
-          piAgentDir: deps.paths.piAgentDir,
-          secrets: deps.secrets,
-        }),
-      );
-      this.client = client;
-      client.on("record", (r) => this.writeLog(r, mask));
-      client.on("parse_error", (line, error) =>
-        this.writeLog({ type: "hub_parse_error", line, error }, mask),
-      );
-      client.on("event", (e) => {
-        if (e.kind === "assistant_message") {
-          const total = deps.accounting.record(task.id, e.message);
-          const maxUsd = deps.config.limits.max_task_usd;
-          if (maxUsd !== undefined && total !== null && total > maxUsd) {
-            this.stopFor(`лимит стоимости ${maxUsd} $ превышен (${total.toFixed(3)} $)`);
-          }
-        } else if (e.kind === "tool_start" && e.record.toolName === REPORT_ASSUMPTION_TOOL) {
-          const text = (e.record.args as { text?: unknown } | undefined)?.text;
-          if (typeof text === "string" && text.trim()) {
-            this.assumptions.push(text.trim());
-            this.patch({ assumptions_json: JSON.stringify(this.assumptions) });
-          }
-        } else if (e.kind === "ui_request") {
-          this.onUiRequest(e.record);
-        }
-      });
-      client.on("exit", (err) => {
-        if (!this.pendingAnswer) return;
-        this.exitWhileWaiting = err;
-        this.releaseWait();
-      });
-      client.start();
-      if (client.pid) this.patch({ pid: client.pid });
-      const state = await client.getState();
-      if (resuming && task.pi_session_path) await client.switchSession(task.pi_session_path);
-      else if (state.sessionFile) this.patch({ pi_session_path: state.sessionFile });
+      let model = task.model ?? "";
+      let client = await this.launchPi(model, { cwd: ws.path, promptFile, mask, resuming });
+      if (this.cancelled || this.interrupted) return;
+      // The model run of this launch (FR-205): a fresh task opens run 1, a continued task
+      // goes on with its last run (the model it ended on).
+      let runSeq: number =
+        deps.repos.modelRuns(task.id).at(-1)?.seq ??
+        deps.repos.startModelRun(task.id, {
+          model,
+          routed_by: task.routed_by ?? "rules",
+          reason: task.route_reason,
+        });
+      this.runSeq = runSeq;
+      // `send` on done/failed reworks on the same model without escalation (FR-203).
+      const mayEscalate = this.mode.kind === "fresh" || this.mode.escalate === true;
+      const firstTry = this.mode.kind === "fresh" && task.attempt === 1 && runSeq === 1;
 
       const message: string =
         this.mode.kind === "fresh"
@@ -497,19 +545,66 @@ export class WorkerRun {
 
       if (!(await this.converse(client, message))) return;
 
-      let fin = await this.finalize(client, project.repo_root, ws.path, baseCommit);
-      let quality = await deps.quality.check({ ...qInput, attempt: task.attempt, round: 1 });
-      const warnings = [...fin.warnings];
-      // One automatic fix round for errors that did not exist on the base (FR-113, D-101).
-      if (quality.status === "FAIL" && newFailures(quality).length) {
-        this.log.info({ issues: quality.issues.length }, "quality failed: automatic fix round");
-        deps.transition(task.id, "running");
-        if (!(await this.converse(client, qualityFixMessage(quality.issues, quality.logPath))))
-          return;
+      const warnings: string[] = [];
+      let fin: FinalizeResult;
+      let quality: QualityRun;
+      let round = 0;
+      for (;;) {
         fin = await this.finalize(client, project.repo_root, ws.path, baseCommit);
         warnings.push(...fin.warnings);
-        quality = await deps.quality.check({ ...qInput, attempt: task.attempt, round: 2 });
-        if (quality.status === "PASS") warnings.push(SECOND_TRY_WARNING);
+        quality = await deps.quality.check({ ...qInput, attempt: task.attempt, round: ++round });
+        // PASS on the first check of the first model; SKIPPED stays unknown (D-215).
+        if (firstTry && round === 1) {
+          deps.repos.setFirstTryPass(
+            task.id,
+            quality.status === "SKIPPED" ? null : quality.status === "PASS",
+          );
+        }
+        // One automatic fix round for errors that did not exist on the base (FR-113, D-101).
+        if (quality.status === "FAIL" && newFailures(quality).length) {
+          this.log.info({ issues: quality.issues.length }, "quality failed: automatic fix round");
+          deps.transition(task.id, "running");
+          if (!(await this.converse(client, qualityFixMessage(quality.issues, quality.logPath))))
+            return;
+          fin = await this.finalize(client, project.repo_root, ws.path, baseCommit);
+          warnings.push(...fin.warnings);
+          quality = await deps.quality.check({ ...qInput, attempt: task.attempt, round: ++round });
+          if (quality.status === "PASS") warnings.push(SECOND_TRY_WARNING);
+        }
+        deps.repos.finishModelRun(task.id, runSeq, quality.status);
+        // Escalation (FR-202): still FAIL on a new error -> the next model of the role's chain.
+        const next =
+          mayEscalate && quality.status === "FAIL" && newFailures(quality).length
+            ? nextModel(
+                deps.repos.getTask(task.id) ?? task,
+                deps.repos.modelRuns(task.id),
+                deps.config,
+              )
+            : null;
+        if (!next) break;
+        this.log.info({ from: model, to: next }, "escalating to the next model");
+        warnings.push(escalationWarning(model, next));
+        await this.stopPi(client);
+        if (this.cancelled || this.interrupted) return;
+        const reason = `escalation after FAIL on ${model}`;
+        runSeq = deps.repos.startModelRun(task.id, {
+          model: next,
+          routed_by: "escalation",
+          reason,
+        });
+        this.runSeq = runSeq;
+        this.patch({ model: next, routed_by: "escalation", route_reason: reason });
+        deps.transition(task.id, "running");
+        model = next;
+        client = await this.launchPi(model, { cwd: ws.path, promptFile, mask, resuming: false });
+        if (this.cancelled || this.interrupted) return;
+        if (
+          !(await this.converse(
+            client,
+            escalationMessage(task.task_text, fin.summary, quality.issues, quality.logPath),
+          ))
+        )
+          return;
       }
       const tampered = tamperingWarning(
         detectTestTampering(
@@ -542,6 +637,9 @@ export class WorkerRun {
       if (this.client && !this.client.hasExited)
         await this.client.stop(this.grace).catch(() => undefined);
       this.patch({ pid: null });
+      // A run cut short (failed, cancelled, interrupted) still gets its end time.
+      const open = this.deps.repos.modelRuns(this.task.id).find((r) => r.seq === this.runSeq);
+      if (open && !open.finished_at) this.deps.repos.finishModelRun(this.task.id, open.seq, null);
       await new Promise<void>((r) => (this.logStream ? this.logStream.end(r) : r()));
     }
   }
