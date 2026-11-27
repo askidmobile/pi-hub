@@ -10,3 +10,4 @@ description: Use ONLY if the user turned on pi-hub architect mode (/architect on
 4. On FAIL, return the task with `send` and concrete remarks.
 5. Before merging parallel branches, check for conflicts.
 6. After each step tell the user its cost and the session total in one sentence.
+7. Questions about spending → one `usage_report(scope, period)` call; retell it in 1–2 sentences.

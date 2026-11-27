@@ -188,10 +188,13 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 - deviated: запуск Pi вынесен в `WorkerRun.launchPi` (его вызывает и эскалация); номера проверок идут дальше по прогонам (`attempt 1.3`, `1.4` — после эскалации).
 
 ### Phase 3: Отчёт о расходах (estimate: 4 h)
-- [ ] `tasks/usage-report.ts`, `TaskService.usageReport`, инструмент в фасаде (FR-206)
-- [ ] Скилы Claude Code и Codex: `usage_report` (FR-225, часть)
-- [ ] Тесты: scope × period, разрезы, неизвестные цены, `SKIPPED` вне доли, ≤ 2 КБ на 20 моделях и 10 ролях, отказ при `off`, ≤ 200 мс на 10 000 шагов
+- [x] `tasks/usage-report.ts`, `TaskService.usageReport`, инструмент в фасаде (FR-206)
+- [x] Скилы Claude Code и Codex: `usage_report` (FR-225, часть)
+- [x] Тесты: scope × period, разрезы, неизвестные цены, `SKIPPED` вне доли, ≤ 2 КБ на 20 моделях и 10 ролях, отказ при `off`, ≤ 200 мс на 10 000 шагов
 - **Independent check:** тесты отчёта и вызов `usage_report` через shim в `mcp-e2e`.
+- deviated: периоды — скользящие окна до текущего момента (`day` = 24 ч, `week` = 7 дней, `month` = 30 дней); шаги отбираются по времени шага, задачи — по времени создания.
+- deviated: модель в разрезе — `provider/model` шага; суффикс уровня размышления (`:high` и т. п.) у модели прогона отбрасывается, чтобы шаги и задачи сошлись в одну строку. «Без проверки: N» — поле `total.unchecked_tasks`.
+- deviated: `usage_report` проверяет режим и в сервисе, не только в фасаде (принцип 2); `scope=project` без проекта у сессии — понятная ошибка. В скилах Claude Code и Codex — строка про `usage_report`; в скиле Claude Code ещё правило про эскалацию (фаза 2). Роль без указания при умном роутере — фаза 4, остальные правила Codex — фаза 5.
 
 ### Phase 4: Умный роутер (estimate: 6 h)
 - [ ] `SystemOneAdapter` (диалект `systemone`) с контрактными тестами на фикстурах фазы 0 (FR-220, FR-221)
@@ -233,7 +236,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | FR-203 | 2 | исключения эскалации — ✅ |
 | FR-204 | 2 | `models`, предупреждение, `routed_by = escalation` — ✅ |
 | FR-205 | 1, 2 | `task_model_runs`, `first_try_pass` — ✅ |
-| FR-206 | 1, 3 | запросы отчёта, `usage-report.ts`, фасад — 🔶 запросы и тип (фаза 1) |
+| FR-206 | 1, 3 | запросы отчёта, `usage-report.ts`, фасад — ✅ |
 | FR-207 | 0, 5 | профиль Codex |
 | FR-208 | 5 | `init` + `codex-profile.ts` |
 | FR-209 | 5 | хук Stop `--client codex` |
@@ -245,7 +248,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | FR-222 | 4 | шаг роутера в учёте |
 | FR-223 | 4 | `init` роутер |
 | FR-224 | 4 | `router status/test/off`, `doctor` |
-| FR-225 | 3, 5 | скилы Claude Code и Codex |
+| FR-225 | 3, 5 | скилы Claude Code и Codex — 🔶 `usage_report`, эскалация (фаза 3) |
 | FR-230 | 7 | `pi-hub status` |
 
 ## Complexity & principle deviations

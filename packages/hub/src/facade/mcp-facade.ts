@@ -13,6 +13,7 @@ import {
   StartInput,
   TaskIdInput,
   TOOL_DESCRIPTIONS,
+  UsageReportInput,
   WaitInput,
 } from "@pi-hub/protocol";
 import type { Logger } from "pino";
@@ -180,6 +181,9 @@ export function createSessionServer(
   reg("send", SendInput.shape, async (args: SendArgs) =>
     deps.service.send(sessionId, args.task_id, args.message),
   );
+  reg("usage_report", UsageReportInput.shape, async (args: UsageArgs) =>
+    deps.service.usageReport(sessionId, args.scope, args.period),
+  );
 
   // Initial visibility before connect: no notifications are sent for it.
   if (rule.tool_list === "dynamic" && mode() !== "on") {
@@ -192,6 +196,7 @@ type StartArgs = z.infer<typeof StartInput>;
 type WaitArgs = z.infer<typeof WaitInput>;
 type TaskIdArgs = z.infer<typeof TaskIdInput>;
 type SendArgs = z.infer<typeof SendInput>;
+type UsageArgs = z.infer<typeof UsageReportInput>;
 
 export interface ToolExtra {
   _meta?: { progressToken?: string | number };

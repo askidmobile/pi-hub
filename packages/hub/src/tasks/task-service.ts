@@ -7,6 +7,7 @@ import {
   type TaskStatus,
   type TaskSummaryRow,
   TRANSITIONS,
+  type UsageReport,
 } from "@pi-hub/protocol";
 import { HubError } from "../errors.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
@@ -16,6 +17,12 @@ import type { TaskPatch, TaskRow } from "../storage/repos.js";
 import { gitTopLevel } from "../workspaces/repo.js";
 import { buildEnvelope, costLine, summaryRow } from "./envelope.js";
 import { answerAsMessage, toOpenQuestion } from "./questions.js";
+import {
+  buildUsageReport,
+  periodStart,
+  type ReportPeriod,
+  type ReportScope,
+} from "./usage-report.js";
 import { type RunMode, type RunnerDeps, WorkerRun } from "./worker-runner.js";
 
 /** Statuses in which a task is still moving on its own. */
@@ -184,6 +191,32 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       counts.set(q.task_id, (counts.get(q.task_id) ?? 0) + 1);
     }
     return [...counts].map(([task_id, count]) => ({ task_id, count }));
+  }
+
+  /** Spending of the session, its project or all tasks over a period (stage 3 FR-206). */
+  usageReport(sessionId: string, scope: ReportScope, period: ReportPeriod): UsageReport {
+    const session = this.deps.repos.getSession(sessionId);
+    if (!session) throw new HubError("not_found", `session ${sessionId} not found`);
+    if (session.mode !== "on") {
+      throw new HubError(
+        "delegation_off",
+        "режим архитектора выключен: включите его командой /architect on",
+      );
+    }
+    if (scope === "project" && !session.project_id) {
+      throw new HubError(
+        "bad_state",
+        "сессия не привязана к проекту: используйте scope session или all",
+      );
+    }
+    const since = periodStart(period);
+    const filter =
+      scope === "session"
+        ? { sessionId, since }
+        : scope === "project"
+          ? { projectId: session.project_id as string, since }
+          : { since };
+    return buildUsageReport(this.deps.repos, { scope, period, filter });
   }
 
   status(sessionId: string): TaskSummaryRow[] {

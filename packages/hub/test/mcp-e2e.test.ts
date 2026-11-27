@@ -117,6 +117,7 @@ describe("MCP over shim with an in-process daemon", () => {
       "send",
       "start",
       "status",
+      "usage_report",
       "wait",
     ]);
 
@@ -148,6 +149,15 @@ describe("MCP over shim with an in-process daemon", () => {
       changed_files: ["hello.txt"],
     });
     expect(parse(await client.callTool({ name: "status", arguments: {} })).tasks).toHaveLength(1);
+    const report = parse(
+      await client.callTool({
+        name: "usage_report",
+        arguments: { scope: "project", period: "week" },
+      }),
+    );
+    expect(report).toMatchObject({ scope: "project", period: "week", total: { tasks: 1 } });
+    expect(report.by_model[0]).toMatchObject({ name: "fake/success", tasks: 1 });
+    expect(report.by_role[0]).toMatchObject({ name: "code", tasks: 1 });
     git(repo, "merge", "-q", "--no-edit", "pi/t_0001");
     expect(existsSync(join(repo, "hello.txt"))).toBe(true);
 
@@ -226,7 +236,7 @@ describe("MCP over shim with an in-process daemon", () => {
     git(repo, "commit", "-q", "-m", "enable pi-hub");
     const { client } = await connectClient(home, repo);
     clients.push(client);
-    expect(await toolNames(client)).toHaveLength(7);
+    expect(await toolNames(client)).toHaveLength(8);
     const bad = await client.callTool({
       name: "start",
       arguments: { task: "x", repo, base_branch: "nope" },
