@@ -14,7 +14,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "check:attribution": "bash scripts/check-attribution.sh",
-    "e2e": "node scripts/e2e.ts"
+    "e2e": "node scripts/e2e.ts",
+    "link:bins": "node scripts/link-bins.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.9",
