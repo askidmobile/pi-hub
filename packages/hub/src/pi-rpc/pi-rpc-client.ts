@@ -39,6 +39,13 @@ export class PiExitedError extends Error {
   }
 }
 
+/** A model from `get_available_models`; `cost` is Pi's catalog price per 1M tokens. */
+export interface PiModelInfo {
+  id: string;
+  provider: string;
+  cost?: { input?: number; output?: number };
+}
+
 interface Pending {
   command: string;
   resolve: (data: unknown) => void;
@@ -209,9 +216,9 @@ export class PiRpcClient extends EventEmitter<PiRpcClientEvents> {
     if (data?.cancelled) throw new PiRpcError("switch_session", "cancelled by an extension");
   }
 
-  async getAvailableModels(): Promise<{ id: string; provider: string }[]> {
+  async getAvailableModels(): Promise<PiModelInfo[]> {
     const data = (await this.request({ type: "get_available_models" })) as {
-      models: { id: string; provider: string }[];
+      models: PiModelInfo[];
     };
     return data?.models ?? [];
   }

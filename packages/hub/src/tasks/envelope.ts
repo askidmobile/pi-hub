@@ -23,6 +23,7 @@ export function buildEnvelope(input: {
   task: TaskRow;
   usage: UsageTotals;
   sessionTotalUsd: number;
+  sessionUnknownSteps?: number;
   changedFiles: string[];
   questions?: { asked: number; answered: number };
 }): ResultEnvelope {
@@ -57,6 +58,7 @@ function rawEnvelope(input: {
   task: TaskRow;
   usage: UsageTotals;
   sessionTotalUsd: number;
+  sessionUnknownSteps?: number;
   changedFiles: string[];
   questions?: { asked: number; answered: number };
 }): ResultEnvelope {
@@ -81,8 +83,12 @@ function rawEnvelope(input: {
       cached_share: round(cachedShare(usage), 2),
       output: usage.output,
       minutes: round(taskMinutes(task), 1),
+      ...(usage.unknown_steps ? { unknown_price_steps: usage.unknown_steps } : {}),
     },
     session_total_usd: round(input.sessionTotalUsd, 4),
+    ...(input.sessionUnknownSteps
+      ? { session_unknown_price_steps: input.sessionUnknownSteps }
+      : {}),
     log_path: task.log_path ?? "",
     warnings,
     attempt: task.attempt,
@@ -90,12 +96,18 @@ function rawEnvelope(input: {
   };
 }
 
-export function costLine(task: TaskRow, usage: UsageTotals, sessionTotalUsd: number): string {
+export function costLine(
+  task: TaskRow,
+  usage: UsageTotals,
+  sessionTotalUsd: number,
+  sessionUnknownSteps = 0,
+): string {
   return formatCostLine({
     usage,
     minutes: taskMinutes(task),
     quality: task.quality_status ?? "SKIPPED",
     sessionTotalUsd,
+    sessionUnknownSteps,
   });
 }
 

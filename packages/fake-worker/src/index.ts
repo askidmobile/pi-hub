@@ -32,6 +32,7 @@ export const SCENARIOS = [
   "quality-fix",
   "quality-broken",
   "skip-test",
+  "zero-cost",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -199,6 +200,12 @@ async function runScenario(): Promise<void> {
         assistant("I could not fix it.\n\nSUMMARY:\n- The check still fails.", 0.001);
       }
       break;
+    case "zero-cost":
+      // a provider without prices: Pi reports cost 0 (stage 2 FR-116)
+      writeHello();
+      commitFile("zero.txt", "zero\n", "Add hello.txt and zero.txt");
+      assistant("Done.\n\nSUMMARY:\n- Added files.", 0, 1_000_000, 100_000);
+      break;
     case "skip-test":
       mkdirSync(join(process.cwd(), "src"), { recursive: true });
       commitFile("src/math.test.ts", 'it.skip("adds", () => {});\n', "Skip the failing math test");
@@ -287,7 +294,10 @@ async function handle(cmd: { id?: string; type?: string; [k: string]: unknown })
       respond(id, type, { sessionFile, sessionId: sessionName, isStreaming: running });
       return;
     case "get_available_models":
-      respond(id, type, { models: SCENARIOS.map((s) => ({ id: s, provider: "fake" })) });
+      respond(id, type, {
+        // a catalog price, like Pi's models.json (doctor shows the price source)
+        models: SCENARIOS.map((s) => ({ id: s, provider: "fake", cost: { input: 1, output: 2 } })),
+      });
       return;
     case "prompt":
       lastPrompt = String(cmd.message ?? "");

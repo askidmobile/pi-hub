@@ -15,6 +15,7 @@ import { Accounting } from "./accounting/accounting.js";
 import { defaultExtensionPath } from "./assets.js";
 import { loadHub, loadSecrets } from "./config/load.js";
 import type { HubPaths } from "./config/paths.js";
+import { PriceBook } from "./config/prices.js";
 import type { HubConfig } from "./config/schema.js";
 import { createSessionServer } from "./facade/mcp-facade.js";
 import { createLogger } from "./log.js";
@@ -113,7 +114,12 @@ export async function startDaemon(env: NodeJS.ProcessEnv = process.env): Promise
       paths,
       secrets: secrets.values,
       wm: new WorkspaceManager(paths.worktreesDir, new GitLock()),
-      accounting: new Accounting(repos),
+      accounting: new Accounting(
+        repos,
+        new PriceBook(paths.prices, (e) =>
+          logger.warn({ err: e.message }, "prices.yaml ignored: manual prices unavailable"),
+        ),
+      ),
       logger,
       pi: {
         bin: config.pi.bin,

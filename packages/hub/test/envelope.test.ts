@@ -36,6 +36,7 @@ const task: TaskRow = {
 
 const usage = {
   steps: 12,
+  unknown_steps: 0,
   cost: 0.043,
   input: 150_000,
   output: 9_000,

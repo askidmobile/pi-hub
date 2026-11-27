@@ -136,6 +136,8 @@ export interface BaselineRow {
 
 export interface UsageTotals {
   steps: number;
+  /** Steps with `cost_source = unknown`: their cost is not in `cost` (FR-117). */
+  unknown_steps: number;
   cost: number;
   input: number;
   output: number;
@@ -486,13 +488,25 @@ export class Repos {
   taskUsage(taskId: string): UsageTotals {
     return this.db
       .prepare(
-        `SELECT COUNT(*) AS steps, COALESCE(SUM(cost), 0) AS cost,
+        `SELECT COUNT(*) AS steps, COALESCE(SUM(cost_source = 'unknown'), 0) AS unknown_steps,
+                COALESCE(SUM(cost), 0) AS cost,
                 COALESCE(SUM(input_tokens), 0) AS input, COALESCE(SUM(output_tokens), 0) AS output,
                 COALESCE(SUM(cache_read_tokens), 0) AS cache_read,
                 COALESCE(SUM(cache_write_tokens), 0) AS cache_write
          FROM steps WHERE task_id = ?`,
       )
       .get(taskId) as unknown as UsageTotals;
+  }
+
+  /** Steps with an unknown price over every task of the session (FR-117). */
+  sessionUnknownSteps(seniorSessionId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM steps s JOIN tasks t ON t.id = s.task_id
+         WHERE t.owner_session_id = ? AND s.cost_source = 'unknown'`,
+      )
+      .get(seniorSessionId) as { n: number };
+    return row.n;
   }
 
   sessionCost(seniorSessionId: string): number {

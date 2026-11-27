@@ -6,6 +6,8 @@ export interface UsageSummary {
   cached_share: number;
   output: number;
   minutes: number;
+  /** Steps with an unknown price, not counted in `cost_usd` (stage 2 FR-117); only when > 0. */
+  unknown_price_steps?: number;
 }
 
 /** The only thing the senior agent reads about a finished task. */
@@ -19,6 +21,8 @@ export interface ResultEnvelope {
   quality: QualityResult;
   usage: UsageSummary;
   session_total_usd: number;
+  /** Session steps with an unknown price, not counted in `session_total_usd`; only when > 0. */
+  session_unknown_price_steps?: number;
   log_path: string;
   /** Hub-detected problems the senior must see: empty diff, AI attribution in commits, stale base, ... */
   warnings: string[];

@@ -193,6 +193,7 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       task,
       usage: this.deps.accounting.usage(task.id),
       sessionTotalUsd: this.deps.accounting.sessionTotal(sessionId),
+      sessionUnknownSteps: this.deps.accounting.sessionUnknownSteps(sessionId),
       changedFiles: changed,
       questions: this.deps.repos.countQuestions(task.id),
     });
@@ -226,6 +227,7 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
         task,
         this.deps.accounting.usage(task.id),
         this.deps.accounting.sessionTotal(sessionId),
+        this.deps.accounting.sessionUnknownSteps(sessionId),
       );
     }
     if (task.failure_reason) out.failure_reason = task.failure_reason;

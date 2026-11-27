@@ -77,7 +77,7 @@ graph TD
 - [x] `tasks/task-service.ts` — `send`: `needs_input` (живой процесс → ответ; `interrupted` с открытым вопросом → продолжение с текстом «вопрос/ответ»), `done` (доработка, `attempt+1`, предупреждение о слитой ветке); `waitFor` возвращает вопрос; `pump()` не считает задачи в `needs_input`; `start(clarify)`; `recover()` сохраняет открытый вопрос.
 - [x] `quality/quality-gate.ts` — реализация `QualityGate`: команды по очереди в worktree, окружение по белому списку, таймаут с убийством группы, полный вывод в `logs/<task_id>.quality.log`, `issues` ≤ 10 × 200; проверка базы во временном worktree (с `setup`) и кэш в `quality_baselines`; блокировка на проект.
 - [x] `workspaces/workspace-manager.ts` — общий запуск команды (`runCommand`) для `setup` и проверки; временный worktree базы (`createBaselineWorktree`/удаление); `diffNameStatus(base)`; `isMergedInto(branch, base)`.
-- [ ] `accounting/accounting.ts` — цепочка источников (FR-116), `unknown`, цена на момент шага, итог по сессии с числом неизвестных шагов; `formatCostLine` с «цена неизвестна».
+- [x] `accounting/accounting.ts` — цепочка источников (FR-116), `unknown`, цена на момент шага, итог по сессии с числом неизвестных шагов; `formatCostLine` с «цена неизвестна».
 - [x] `tasks/envelope.ts` — `quality.issues`, `quality.log_path`, `questions`, `attempt`; контроль 2 КБ.
 - [ ] `facade/mcp-facade.ts` — `start.clarify`; `wait` с вопросом; строка ожидающих вопросов, добавляемая ко всем ответам сессии (≤ 300 байт); новый текст `send`.
 - [ ] `sessions/hook-resolver.ts` (новый) — предки PID через `ps -o ppid= -p` (до 10 уровней, кэш на запрос), сопоставление с `parent_pid` сессий; запасной путь — единственная подключённая сессия Claude Code проекта по `cwd`.
@@ -227,9 +227,13 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 - **Independent check:** интеграционные тесты сценария 4 на уровне `TaskService` зелёные.
 
 ### Phase 4: Стоимость (estimate: 3 h)
-- [ ] [P] `accounting.ts`: цепочка `provider → pi_event → tokens_x_price → unknown`, цена шага, итог с числом неизвестных; `formatCostLine` (FR-116, FR-117)
-- [ ] `doctor`: источник цены для моделей ролей (FR-128, часть)
-- [ ] Тесты: каждый источник; нулевая стоимость без ручной цены → `unknown`; строка «цена неизвестна»; итог по сессии с пометкой
+- [x] [P] `accounting.ts`: цепочка `provider → pi_event → tokens_x_price → unknown`, цена шага, итог с числом неизвестных; `formatCostLine` (FR-116, FR-117)
+- [x] `doctor`: источник цены для моделей ролей (FR-128, часть)
+- [x] Тесты: каждый источник; нулевая стоимость без ручной цены → `unknown`; строка «цена неизвестна»; итог по сессии с пометкой
+- deviated: строка стоимости при части неизвестных шагов — «0,043 $ без учёта N шагов с неизвестной ценой», при всех неизвестных — «цена неизвестна»; итог по сессии — так же. В конверт добавлены необязательные поля `usage.unknown_price_steps` и `session_unknown_price_steps` (только при > 0); версия протокола 0.2.0 ещё не выпущена.
+- deviated: ручная цена без `cache_read`/`cache_write` считает кэш по цене входа; токены × цена — за 1M токенов.
+- deviated: `doctor` передаёт Pi ключи всех провайдеров ролей, чтобы увидеть все модели ролей; источник «каталог Pi» и «провайдер» заранее не различить (провайдер сообщает стоимость только в ответе), поэтому строка одна. Проверено на настоящем Pi: у `9router/Deepseek-v4.1-flash` цены в каталоге нет → предупреждение; с ценой в `prices.yaml` → «ручная цена».
+- deviated: фейковый воркер — сценарий `zero-cost` и цена каталога в `get_available_models`.
 - **Independent check:** модульные тесты учёта; шаги фейкового воркера с нулевой стоимостью и ручной ценой дают `tokens_x_price`.
 
 ### Phase 5: Фасад, строка вопросов, хук Stop (estimate: 8 h)
@@ -270,8 +274,8 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | FR-113 ✅ | 3 | авто-круг в `WorkerRun` |
 | FR-114 ✅ | 3 | блокировка на проект |
 | FR-115 ✅ | 2 | `worker-prompt.md` |
-| FR-116 🔶 | 1, 4 | `prices.ts`, цепочка источников, миграция `steps` |
-| FR-117 | 4 | `formatCostLine`, итог по сессии |
+| FR-116 ✅ | 1, 4 | `prices.ts`, цепочка источников, миграция `steps` |
+| FR-117 ✅ | 4 | `formatCostLine`, итог по сессии |
 | FR-118 ✅ | 1, 2 | необязательные пределы, пауза таймера в `needs_input` |
 | FR-119 ✅ | 3 | проверка базы, `quality_baselines` |
 | FR-120 ✅ | 2 | `detectTextQuestion` до `ensureSummary` |
@@ -281,7 +285,7 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | FR-125 ✅ | 2 | `clarify`, фаза `planning` |
 | FR-126 | 5 | скил архитектора |
 | FR-127 ✅ | 3 | конверт |
-| FR-128 | 4, 5 | `doctor`: цены и хук |
+| FR-128 🔶 | 4, 5 | `doctor`: цены и хук |
 | FR-129 ✅ | 2, 3 | сценарии фейкового воркера |
 | FR-130 | 5 | `pi-hub status` |
 

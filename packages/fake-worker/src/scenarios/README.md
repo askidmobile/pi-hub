@@ -11,3 +11,5 @@ See `SCENARIOS` there for the list.
 - Stage 2 quality (the project check fails while `broken.txt` exists): `quality-fix` (adds
   `broken.txt`, removes it after the fix message), `quality-broken` (never fixes),
   `skip-test` (commits a test with `it.skip`).
+- Stage 2 cost: `zero-cost` (one step of 1M input and 100k output tokens with cost 0, like a
+  provider Pi has no price for).

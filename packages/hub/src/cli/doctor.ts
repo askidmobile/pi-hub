@@ -6,16 +6,18 @@ import { promisify } from "node:util";
 import { defaultExtensionPath } from "../assets.js";
 import { loadHub, loadSecrets } from "../config/load.js";
 import type { HubPaths } from "../config/paths.js";
+import { PriceBook } from "../config/prices.js";
 import type { HubConfig } from "../config/schema.js";
 import { PINNED_PI_VERSION } from "../config/schema.js";
 import { allowlistedEnv } from "../pi-rpc/launcher.js";
-import { PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
+import { type PiModelInfo, PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
 import { parseModelRef } from "../router/model-resolver.js";
 
 /**
  * `pi-hub doctor` (spec FR-031): config, provider key, pinned Pi version, worker extension,
- * Pi sees the default model (RPC `get_available_models`, no model call), git, shim, daemon.
+ * Pi sees the default model (RPC `get_available_models`, no model call), price source of the
+ * role models (stage 2 FR-128), git, shim, daemon.
  * The same checks are the last step of `pi-hub init`.
  */
 const run = promisify(execFile);
@@ -105,7 +107,9 @@ export async function runDoctor(
   }
 
   if (ref && !piVersion.error && (!keyVar || keyValue)) {
-    checks.push(await probeModel(config, paths, ref, keyVar, keyValue, opts.probeTimeoutMs));
+    const probe = await probeModel(config, paths, ref, secrets.values, opts.probeTimeoutMs);
+    checks.push(probe.check);
+    if (probe.models) checks.push(...priceSourceChecks(config, probe.models, paths.prices));
   }
 
   try {
@@ -148,15 +152,19 @@ async function probeModel(
   config: HubConfig,
   paths: HubPaths,
   ref: { provider: string; modelId: string },
-  keyVar: string | undefined,
-  keyValue: string | undefined,
+  secrets: Readonly<Record<string, string>>,
   timeoutMs = 30_000,
-): Promise<Check> {
+): Promise<{ check: Check; models?: PiModelInfo[] }> {
   const name = "Pi видит модель";
   const env = allowlistedEnv();
   env.PI_CODING_AGENT_DIR = paths.piAgentDir;
   env.PI_OFFLINE = "1";
-  if (keyVar && keyValue) env[keyVar] = keyValue;
+  // Keys of every role provider, so the price check sees all role models.
+  for (const role of Object.values(config.roles)) {
+    const keyVar = providerKeyEnv(parseModelRef(role.model).provider);
+    const value = keyVar ? secrets[keyVar] : undefined;
+    if (keyVar && value) env[keyVar] = value;
+  }
   const client = new PiRpcClient({
     command: config.pi.bin,
     args: [
@@ -184,19 +192,49 @@ async function probeModel(
       }),
     ]);
     const found = models.some((m) => m.provider === ref.provider && m.id === ref.modelId);
-    return found
-      ? ok(name, `${ref.provider}/${ref.modelId}`)
-      : fail(
-          name,
-          `${ref.provider}/${ref.modelId} нет среди доступных (${models.length} моделей); ` +
-            "проверьте имя модели и ключ",
-        );
+    return {
+      check: found
+        ? ok(name, `${ref.provider}/${ref.modelId}`)
+        : fail(
+            name,
+            `${ref.provider}/${ref.modelId} нет среди доступных (${models.length} моделей); ` +
+              "проверьте имя модели и ключ",
+          ),
+      models,
+    };
   } catch (e) {
-    return fail(name, (e as Error).message);
+    return { check: fail(name, (e as Error).message) };
   } finally {
     clearTimeout(timer);
     if (client.pid !== undefined && !client.hasExited) await client.stop(4_000).catch(() => {});
   }
+}
+
+/**
+ * Where the cost of each role model will come from (stage 2 FR-128, FR-116). Whether the
+ * provider reports cost is known only per response, so a catalog price covers both.
+ */
+export function priceSourceChecks(
+  config: Pick<HubConfig, "roles">,
+  models: PiModelInfo[],
+  pricesFile: string,
+): Check[] {
+  const book = new PriceBook(pricesFile);
+  const name = "цена модели";
+  const refs = [...new Set(Object.values(config.roles).map((r) => r.model))];
+  return refs.map((model) => {
+    const { provider, modelId } = parseModelRef(model);
+    if (book.lookup(provider, modelId)) return ok(name, `${model}: ручная цена (prices.yaml)`);
+    const info = models.find((m) => m.provider === provider && m.id === modelId);
+    if (info && ((info.cost?.input ?? 0) > 0 || (info.cost?.output ?? 0) > 0)) {
+      return ok(name, `${model}: каталог Pi или стоимость от провайдера`);
+    }
+    return warn(
+      name,
+      `${model}: цена неизвестна, если провайдер не сообщит стоимость; ` +
+        `задайте цену в ${pricesFile}`,
+    );
+  });
 }
 
 export function findInPath(bin: string, pathVar = process.env.PATH ?? ""): string | undefined {

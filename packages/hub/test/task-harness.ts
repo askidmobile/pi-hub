@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { Accounting } from "../src/accounting/accounting.js";
+import { Accounting, type PriceLookup } from "../src/accounting/accounting.js";
 import { defaultExtensionPath } from "../src/assets.js";
 import { resolveHubPaths } from "../src/config/paths.js";
 import { HubConfig } from "../src/config/schema.js";
@@ -38,6 +38,8 @@ export function makeHarness(
     dbFile?: string;
     /** No cost or time limit at all (stage 2 default, FR-118). */
     noLimits?: boolean;
+    /** Manual prices for accounting (`prices.yaml`). */
+    prices?: PriceLookup;
   } = {},
 ): Harness {
   const home = join(root, "h");
@@ -65,7 +67,7 @@ export function makeHarness(
     paths,
     secrets: {},
     wm: new WorkspaceManager(paths.worktreesDir, new GitLock()),
-    accounting: new Accounting(repos),
+    accounting: new Accounting(repos, opts.prices),
     logger,
     pi: { bin: process.execPath, binArgs: [FAKE_WORKER], extensionPath: defaultExtensionPath() },
     timing: {
