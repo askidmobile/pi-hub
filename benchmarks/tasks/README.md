@@ -1,4 +1,18 @@
-# Reference tasks
+# Эталонные задачи
 
-5–10 fixed tasks used to compare models and catch regressions after Pi / model updates.
-Each task: `NN-name/task.md` (statement + acceptance criteria), `repo` fixture ref, expected checks.
+Шесть задач для сравнения моделей воркера (этап 3, FR-211): исправление ошибки, функция с
+тестами, рефакторинг, задача с обязательным вопросом, документация, типы.
+
+Каждая задача — `NN-имя/`:
+
+- `task.md` — раздел `## Task` уходит воркеру как текст задачи, `## Приёмка` — для людей;
+- `repo/` — исходный репозиторий (JS без зависимостей, `node --test`);
+- `pi-hub.toml` — команды проверки; `{{ACCEPT}}` — папка скрытых тестов приёмки, `{{TSC}}` — `tsc` этого репозитория;
+- `accept/` — скрытые тесты приёмки: лежат вне репозитория воркера;
+- `answers.json` — заготовленные ответы на вопросы воркера (`default` или по ключевому слову).
+
+Проверка каждой задачи падает на исходном репозитории и проходит на эталонном решении.
+Поэтому авто-круг хаба (только для новых ошибок) запускается, лишь если воркер сломал что-то ещё.
+
+Прогон: `pnpm build && pnpm bench --models 9router/a,9router/b --extension ~/.pi/agent/extensions/9router.ts`
+(см. `scripts/bench.ts`); результаты — `benchmarks/results/<дата>.md` и `<дата>/raw.jsonl`.

@@ -1,0 +1,4 @@
+[quality]
+test = "node --test"
+typecheck = "'{{TSC}}' --noEmit --allowJs --checkJs --strict --target es2022 --module nodenext src/geometry.js"
+timeout_minutes = 2

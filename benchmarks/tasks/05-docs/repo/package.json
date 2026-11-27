@@ -1,0 +1,8 @@
+{
+  "name": "bench-greet",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "greet": "bin/greet.js"
+  }
+}

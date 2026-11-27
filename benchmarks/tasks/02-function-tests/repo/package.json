@@ -1,0 +1,5 @@
+{
+  "name": "bench-duration",
+  "type": "module",
+  "private": true
+}
