@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDoctor } from "../src/cli/doctor.js";
-import { applyInit } from "../src/cli/init.js";
+import { applyInit, connectPlugin, findAppClaude, renderConfig } from "../src/cli/init.js";
 import { formatTasks, listTasks } from "../src/cli/status.js";
 import { migrate, openDatabase } from "../src/storage/db.js";
 import { Repos } from "../src/storage/repos.js";
@@ -99,6 +99,71 @@ describe("pi-hub init", () => {
     const again = execFileSync(process.execPath, args, { env, encoding: "utf8" });
     expect(again).toContain("вопросы пропущены");
     expect(again).toContain("оставлен как есть");
+  });
+});
+
+describe("pi-hub init: providers from extensions and the app's claude", () => {
+  it("writes pi.extensions for a provider that comes from a Pi extension", () => {
+    const yaml = renderConfig({
+      model: "9router/Deepseek-v4.1-flash",
+      allowedRepos: [],
+      extensions: ["/x/9router.ts"],
+    });
+    expect(yaml).toMatch(
+      /pi:\n {2}version: .*\n {2}bin: pi\n {2}extensions:\n {4}- \/x\/9router\.ts/,
+    );
+    expect(renderConfig({ model: "zai/glm-5.2", allowedRepos: [] })).not.toContain("extensions");
+  });
+
+  it("CLI --extension lands in the config", () => {
+    const ext = join(tmp.path, "router.ts");
+    writeFileSync(ext, "export default () => {};\n");
+    execFileSync(
+      process.execPath,
+      [
+        HUB_CLI,
+        "init",
+        "--yes",
+        "--model",
+        "fake/success",
+        "--extension",
+        ext,
+        "--no-plugin",
+        "--no-check",
+      ],
+      { env, encoding: "utf8" },
+    );
+    expect(readFileSync(join(home, "config.yaml"), "utf8")).toContain(`- ${ext}`);
+  });
+
+  it("finds the newest Claude Code CLI bundled with the desktop app", () => {
+    const root = join(tmp.path, "claude-code");
+    expect(findAppClaude(root)).toBeUndefined();
+    const make = (version: string, build: string) => {
+      const dir = join(root, version, build, "claude.app", "Contents", "MacOS");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "claude"), "");
+      return join(dir, "claude");
+    };
+    make("2.1.9", "aaa");
+    const newest = make("2.1.331", "5cdc5c10ac5c");
+    mkdirSync(join(root, "2.2.0", "empty"), { recursive: true });
+    expect(findAppClaude(root)).toBe(newest);
+  });
+
+  it("connectPlugin runs the found claude, or prints the commands without one", async () => {
+    const log = join(tmp.path, "claude.log");
+    const claude = join(bin, "my claude");
+    writeFileSync(claude, `#!/bin/sh\necho "$@" >> "${log}"\n`);
+    chmodSync(claude, 0o755);
+    expect(await connectPlugin("/repo", claude)).toMatchObject({ done: true });
+    expect(readFileSync(log, "utf8")).toBe(
+      "plugin marketplace add /repo\nplugin install pi-hub@pi-hub-local --scope user\n",
+    );
+    // never undefined here: that would pick the real claude of this machine
+    const none = await connectPlugin("/repo", null);
+    expect(none).toMatchObject({ done: false });
+    expect(none.commands[0]).toBe("claude plugin marketplace add /repo");
   });
 });
 

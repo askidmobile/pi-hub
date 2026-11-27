@@ -12,7 +12,7 @@
 git clone <url> pi-hub && cd pi-hub
 pnpm install
 pnpm build
-pnpm link:bins              # обёртки pi-hub и pi-hub-shim в ~/.local/bin
+pnpm run link:bins          # обёртки pi-hub и pi-hub-shim в ~/.local/bin (или npm run link:bins)
 ```
 
 ## Первый запуск

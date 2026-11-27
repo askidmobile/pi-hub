@@ -254,11 +254,12 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 ### Phase 6: Сквозная проверка и закрытие (estimate: 4 h)
 - [x] `scripts/e2e.ts --scenario ask` на `9router/Deepseek-v4.1-flash`: вопрос через `wait`, ответ `send`, вердикт проверки по команде из `.pi-hub.toml`; строка стоимости «цена неизвестна» и с ручной ценой
-- [ ] Ручной прогон в Claude Code: вопрос воркера, хук Stop, ответ, FAIL → `send` → PASS
+- [x] Ручной прогон в Claude Code: вопрос воркера, хук Stop, ответ, FAIL → `send` → PASS
 - [x] ADR-0005 (дополнение), ADR-0012 (проверка качества), `docs/architecture/task-lifecycle.md`
 - [x] `pnpm build && pnpm lint && pnpm typecheck && pnpm test`, CI зелёный
 - deviated: `pnpm e2e --scenario ask` прогнан 2026-11-27 на `9router/Deepseek-v4.1-flash` (расширение `~/.pi/agent/extensions/9router.ts`): воркер спросил через `ask` (варианты a.txt/b.txt), `wait` вернул `needs_input`, строка «ожидают ответа: t_0001 (1 вопрос)» пришла в ответе `status`, `send` → `done`, проверка `PASS` по команде `.pi-hub.toml`, `questions {1, 1}`, `answer.txt` на ветке; стоимость «цена неизвестна» (3 шага), вторая задача с ценой в `prices.yaml` — «0,004 $ … по сессии 0,004 $ без учёта 3 шагов с неизвестной ценой».
-- deviated: ручной прогон в Claude Code не сделан: нужен залогиненный Claude Code с установленным плагином, личную конфигурацию Claude Code агент не меняет. Путь хука проверен через настоящий `pi-hub-shim hook stop` в интеграционных тестах; ручная проверка остаётся за автором.
+- deviated: ручной прогон в Claude Code 2.1.331 (приложение, плагин из локального marketplace, `9router/Deepseek-v4.1-flash`, репозиторий `~/tmp/pi-hub-try`) сделал автор 2026-11-27: `wait` вернул вопрос воркера; хук Stop один раз заблокировал конец хода (сессия найдена по предкам процесса, 47 мс), повторно пропустил (`stop_hook_active`); хук в другой сессии (режим `off`) ничего не блокировал; `send` → `done`, стоимость «цена неизвестна». `FAIL` с ошибкой, которая была на базе, — без авто-круга и с пометкой «падало до задачи»; `send` на слитую `done` → предупреждение о слитой ветке, `PASS`, `attempt 2`.
+- deviated: при установке выяснилось: в pnpm 12 нет `pnpm link --global` (добавлен `pnpm link:bins`/`npm run link:bins` — обёртки в `~/.local/bin`); `pi-hub init` не спрашивает расширение Pi для провайдера из расширения и не находит `claude` вне PATH — исправлено следом.
 - deviated: тест хука при остановленном хабе — 20 вызовов, 95-й перцентиль ≤ 100 мс, как в критерии успеха.
 - **Independent check:** ворота этапа 2 из спецификации отмечены.
 

@@ -53,8 +53,8 @@ describe("TaskService quality gate (fake worker)", () => {
     expect(env.quality).toMatchObject({ status: "PASS", issues: [] });
     expect(env.warnings).toContain(SECOND_TRY_WARNING);
     const log = readFileSync(env.quality.log_path as string, "utf8");
-    expect(log).toContain("=== attempt 1 · test:");
-    expect(log).toContain("=== attempt 2 · test:");
+    expect(log).toContain("=== attempt 1.1 · test:");
+    expect(log).toContain("=== attempt 1.2 · test:");
     expect(env.changed_files).toEqual(["hello.txt"]);
   });
 
@@ -64,7 +64,7 @@ describe("TaskService quality gate (fake worker)", () => {
     expect(env.status).toBe("done");
     expect(env.quality.status).toBe("FAIL");
     expect(env.quality.issues).toEqual(["test: код 1", "test: error: broken.txt found"]);
-    expect(readFileSync(env.quality.log_path as string, "utf8")).toContain("=== attempt 2");
+    expect(readFileSync(env.quality.log_path as string, "utf8")).toContain("=== attempt 1.2");
   });
 
   it("send on done after FAIL reworks and checks again (scenario 4, FR-105)", async () => {
@@ -78,6 +78,9 @@ describe("TaskService quality gate (fake worker)", () => {
     const env = await h.service.result(h.sessionId, first.id);
     expect(env.quality.status).toBe("PASS");
     expect(env.attempt).toBe(2);
+    expect(readFileSync(env.quality.log_path as string, "utf8")).toContain(
+      "=== attempt 2.1 · test:",
+    );
   });
 
   it("errors that fail on the base: no fix round, the base result is reused (FR-119)", async () => {
@@ -86,7 +89,7 @@ describe("TaskService quality gate (fake worker)", () => {
     const a = await run("fake/success");
     expect(a.env.quality.status).toBe("FAIL");
     expect(a.env.quality.issues[0]).toMatch(/^test: падало до задачи: /);
-    expect(readFileSync(a.env.quality.log_path as string, "utf8")).not.toContain("attempt 2");
+    expect(readFileSync(a.env.quality.log_path as string, "utf8")).not.toContain("attempt 1.2");
     await run("fake/empty-diff");
     // base once + one check per task
     expect(readFileSync(counter, "utf8").trim().split("\n")).toHaveLength(3);

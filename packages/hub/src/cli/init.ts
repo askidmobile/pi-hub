@@ -1,6 +1,14 @@
 import { execFile } from "node:child_process";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { stringify } from "yaml";
@@ -33,6 +41,8 @@ export interface InitAnswers {
   apiKey?: string | undefined;
   allowedRepos: string[];
   piBin?: string | undefined;
+  /** Pi extensions that add the provider (e.g. a router from ~/.pi/agent/extensions). */
+  extensions?: string[] | undefined;
 }
 
 export type InitAction = { file: string; action: "created" | "kept" | "updated" };
@@ -52,7 +62,11 @@ export function renderConfig(answers: InitAnswers): string {
   const config = {
     delegation_default: "off",
     allowed_repos: answers.allowedRepos,
-    pi: { version: PINNED_PI_VERSION, bin: answers.piBin ?? "pi" },
+    pi: {
+      version: PINNED_PI_VERSION,
+      bin: answers.piBin ?? "pi",
+      ...(answers.extensions?.length ? { extensions: answers.extensions } : {}),
+    },
     limits: { max_workers_hub: 2 },
     roles: { code: { model: answers.model } },
     default_role: "code",
@@ -114,21 +128,57 @@ function quoteEnv(value: string): string {
   return /^[A-Za-z0-9_\-.:/+=]+$/.test(value) ? value : `"${value.replace(/"/g, '\\"')}"`;
 }
 
-export const PLUGIN_COMMANDS = (root: string): string[][] => [
-  ["claude", "plugin", "marketplace", "add", root],
-  ["claude", "plugin", "install", "pi-hub@pi-hub-local", "--scope", "user"],
+export const PLUGIN_COMMANDS = (root: string, claude = "claude"): string[][] => [
+  [claude, "plugin", "marketplace", "add", root],
+  [claude, "plugin", "install", "pi-hub@pi-hub-local", "--scope", "user"],
 ];
 
+/** Where the Claude desktop app keeps its Claude Code CLI (macOS). */
+export const APP_CLAUDE_ROOT = join(
+  homedir(),
+  "Library",
+  "Application Support",
+  "Claude",
+  "claude-code",
+);
+
+const versionKey = (v: string) => v.split(".").map((n) => Number.parseInt(n, 10) || 0);
+
 /**
- * Connects the Claude Code plugin from the local marketplace (PD-011). Without `claude`
- * in PATH (desktop app only) returns the commands for the user to run.
+ * The newest Claude Code CLI bundled with the desktop app:
+ * `<root>/<version>/<build>/claude.app/Contents/MacOS/claude`. Undefined when there is none.
+ */
+export function findAppClaude(root = APP_CLAUDE_ROOT): string | undefined {
+  if (!existsSync(root)) return undefined;
+  const versions = readdirSync(root)
+    .filter((v) => /^\d+\.\d+\.\d+$/.test(v))
+    .sort((a, b) => {
+      const [x, y] = [versionKey(a), versionKey(b)];
+      for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (y[i] ?? 0) - (x[i] ?? 0);
+      return 0;
+    });
+  for (const v of versions) {
+    for (const build of readdirSync(join(root, v))) {
+      const bin = join(root, v, build, "claude.app", "Contents", "MacOS", "claude");
+      if (existsSync(bin)) return bin;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Connects the Claude Code plugin from the local marketplace (PD-011). Uses `claude` from
+ * PATH, else the CLI bundled with the desktop app; without either returns the commands for
+ * the user to run.
  */
 export async function connectPlugin(
   root = repoRoot(),
+  /** null: no Claude Code CLI (only print the commands). */
+  claude: string | null = findInPath("claude") ?? findAppClaude() ?? null,
 ): Promise<{ done: boolean; commands: string[]; error?: string }> {
-  const cmds = PLUGIN_COMMANDS(root);
+  const cmds = PLUGIN_COMMANDS(root, claude ?? "claude");
   const printable = cmds.map((c) => c.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" "));
-  if (!findInPath("claude")) return { done: false, commands: printable };
+  if (!claude) return { done: false, commands: printable };
   for (const [bin, ...args] of cmds) {
     try {
       await run(bin as string, args, { timeout: 60_000 });
@@ -167,11 +217,22 @@ export async function askAnswers(env: NodeJS.ProcessEnv = process.env): Promise<
       (await password({ message: `Ключ ${keyVar} (хранится в ~/.pi-hub/.env)`, mask: "*" })) ||
       undefined;
   }
+  // A provider Pi does not know by itself comes from an extension (e.g. a model router).
+  let extensions: string[] | undefined;
+  if (!preset) {
+    const guess = join(homedir(), ".pi", "agent", "extensions", `${chosen}.ts`);
+    const ext = await input({
+      message: "Расширение Pi, которое добавляет этого провайдера (путь; пусто — не нужно)",
+      default: existsSync(guess) ? guess : "",
+      validate: (v) => !v.trim() || existsSync(expandHome(v.trim())) || "файл не найден",
+    });
+    if (ext.trim()) extensions = [resolve(expandHome(ext.trim()))];
+  }
   const repos = await input({
     message: "Разрешённые репозитории (пути через запятую)",
     default: process.cwd(),
   });
-  return { model, apiKey, allowedRepos: splitRepos(repos) };
+  return { model, apiKey, allowedRepos: splitRepos(repos), extensions };
 }
 
 export function splitRepos(raw: string): string[] {

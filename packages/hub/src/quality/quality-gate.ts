@@ -48,8 +48,10 @@ export interface QualityCheckInput {
   worktree: string;
   baseCommit: string;
   project: ProjectConfig;
-  /** Shown in the log: 1 = first check, 2 = after the fix round, ... */
+  /** The task's rework attempt (1, +1 per `send` on a finished task). */
   attempt: number;
+  /** Check within the attempt: 1 = first, 2 = after the automatic fix round. */
+  round: number;
 }
 
 export interface QualityGateDeps {
@@ -90,7 +92,7 @@ export class QualityGate {
    * memory; may be started early, while the worker works (plan PD-106).
    */
   baseline(
-    input: Omit<QualityCheckInput, "taskId" | "worktree" | "attempt">,
+    input: Omit<QualityCheckInput, "taskId" | "worktree" | "attempt" | "round">,
   ): Promise<Map<string, boolean>> {
     const commands = qualityCommands(input.project);
     const key = `${input.projectId}\0${input.baseCommit}\0${commands.map((c) => c[1]).join("\0")}`;
@@ -110,7 +112,7 @@ export class QualityGate {
   }
 
   private async computeBaseline(
-    input: Omit<QualityCheckInput, "taskId" | "worktree" | "attempt">,
+    input: Omit<QualityCheckInput, "taskId" | "worktree" | "attempt" | "round">,
     commands: [QualityCommand, string][],
   ): Promise<Map<string, boolean>> {
     const { repos, wm } = this.deps;
@@ -187,7 +189,7 @@ export class QualityGate {
         if (!r.ok) excerpts.set(name, r.spawnError ?? errorExcerpt(r.output, MAX_ISSUES));
         appendFileSync(
           logPath,
-          `=== attempt ${input.attempt} · ${name}: ${cmd} · ${
+          `=== attempt ${input.attempt}.${input.round} · ${name}: ${cmd} · ${
             r.timedOut ? "timed out" : `exit ${r.exitCode ?? "?"}`
           } · ${(r.durationMs / 1000).toFixed(1)} s ===\n${r.output}${
             r.output.endsWith("\n") || !r.output ? "" : "\n"
@@ -196,7 +198,7 @@ export class QualityGate {
       }
       const status: QualityStatus = outcomes.every((o) => o.ok) ? "PASS" : "FAIL";
       this.deps.logger.info(
-        { task_id: input.taskId, attempt: input.attempt, status },
+        { task_id: input.taskId, attempt: input.attempt, round: input.round, status },
         "quality check finished",
       );
       return {

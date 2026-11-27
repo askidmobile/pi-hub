@@ -43,6 +43,7 @@ describe("QualityGate", () => {
     baseCommit: base,
     project,
     attempt: 1,
+    round: 1,
   });
 
   beforeEach(() => {
@@ -85,7 +86,7 @@ describe("QualityGate", () => {
     expect(fail.issues[0]).toBe("lint: код 2");
     expect(fail.issues.every((i) => i.length <= 200 && i.startsWith("lint: "))).toBe(true);
     const log = readFileSync(fail.logPath as string, "utf8");
-    expect(log).toContain("=== attempt 1 · lint:");
+    expect(log).toContain("=== attempt 1.1 · lint:");
     expect(log).toContain("error: line 30");
     expect(log).toContain("typecheck: true · exit 0");
   });

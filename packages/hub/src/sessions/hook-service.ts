@@ -85,7 +85,9 @@ export function hookReason(questions: QuestionRow[]): string {
     return `${q.task_id}: ${text}${options.length ? ` Варианты: ${options.join("; ")}.` : ""}`;
   });
   const head = "Воркер pi-hub ждёт ответа. ";
-  const tail = " Ответьте через send(task_id, ответ) или спросите пользователя.";
+  const tail =
+    " Ответьте через send(task_id, ответ) или спросите пользователя." +
+    " Это напоминание приходит один раз; дальше вопрос виден в строке «ожидают ответа».";
   let body = parts.join(" | ");
   const room = MAX_REASON_CHARS - head.length - tail.length;
   if (body.length > room) body = `${body.slice(0, room - 1)}…`;

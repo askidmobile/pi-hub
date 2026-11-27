@@ -498,7 +498,7 @@ export class WorkerRun {
       if (!(await this.converse(client, message))) return;
 
       let fin = await this.finalize(client, project.repo_root, ws.path, baseCommit);
-      let quality = await deps.quality.check({ ...qInput, attempt: 1 });
+      let quality = await deps.quality.check({ ...qInput, attempt: task.attempt, round: 1 });
       const warnings = [...fin.warnings];
       // One automatic fix round for errors that did not exist on the base (FR-113, D-101).
       if (quality.status === "FAIL" && newFailures(quality).length) {
@@ -508,7 +508,7 @@ export class WorkerRun {
           return;
         fin = await this.finalize(client, project.repo_root, ws.path, baseCommit);
         warnings.push(...fin.warnings);
-        quality = await deps.quality.check({ ...qInput, attempt: 2 });
+        quality = await deps.quality.check({ ...qInput, attempt: task.attempt, round: 2 });
         if (quality.status === "PASS") warnings.push(SECOND_TRY_WARNING);
       }
       const tampered = tamperingWarning(

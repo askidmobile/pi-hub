@@ -48,6 +48,12 @@ program
   .option("--model <provider/id>", "default worker model")
   .option("--repo <paths>", "allowed repositories, comma-separated")
   .option("--pi-bin <path>", "Pi executable (default: pi)")
+  .option(
+    "--extension <path>",
+    "Pi extension that adds the provider (repeatable)",
+    (v: string, all: string[]) => [...all, v],
+    [] as string[],
+  )
   .option("--no-plugin", "do not connect the Claude Code plugin")
   .option("--no-check", "skip the final doctor checks")
   .action(
@@ -56,6 +62,7 @@ program
       model?: string;
       repo?: string;
       piBin?: string;
+      extension: string[];
       plugin: boolean;
       check: boolean;
     }) => {
@@ -74,6 +81,7 @@ program
           model: opts.model,
           allowedRepos: splitRepos(opts.repo ?? ""),
           piBin: opts.piBin,
+          extensions: splitRepos(opts.extension.join(",")),
         };
       } else {
         answers = { ...(await askAnswers()), piBin: opts.piBin };
