@@ -1,9 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runDoctor } from "../src/cli/doctor.js";
+import { findInPath, runDoctor } from "../src/cli/doctor.js";
 import { applyInit, connectPlugin, findAppClaude, renderConfig } from "../src/cli/init.js";
 import { formatTasks, listTasks } from "../src/cli/status.js";
 import { migrate, openDatabase } from "../src/storage/db.js";
@@ -36,7 +44,12 @@ beforeEach(() => {
   bin = join(tmp.path, "bin");
   mkdirSync(bin);
   symlinkSync(SHIM, join(bin, "pi-hub-shim"));
-  env = { PI_HUB_HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}` };
+  // CODEX_HOME in the temp dir: init must never touch the real ~/.codex
+  env = {
+    PI_HUB_HOME: home,
+    CODEX_HOME: join(tmp.path, ".codex"),
+    PATH: `${bin}:${process.env.PATH ?? ""}`,
+  };
 });
 afterEach(() => tmp.cleanup());
 
@@ -95,6 +108,9 @@ describe("pi-hub init", () => {
     const out = execFileSync(process.execPath, args, { env, encoding: "utf8" });
     expect(out).toContain("✓ Pi видит модель: fake/success");
     expect(out).not.toContain("✗");
+    // with codex installed the profile lands in the temp CODEX_HOME (stage 3 FR-208)
+    const profile = join(tmp.path, ".codex", "pi-hub.config.toml");
+    expect(existsSync(profile)).toBe(!!findInPath("codex", env.PATH));
     // Repeat run: config kept, questions skipped.
     const again = execFileSync(process.execPath, args, { env, encoding: "utf8" });
     expect(again).toContain("вопросы пропущены");
@@ -178,7 +194,9 @@ describe("pi-hub doctor", () => {
     setup("fake/success");
     const checks = await runDoctor(env);
     expect(checks.filter((c) => c.level === "fail")).toEqual([]);
-    expect(checks.filter((c) => c.level === "warn").map((c) => c.name)).toEqual(["демон"]);
+    // Codex checks depend on whether codex is installed here (codex-profile.test.ts covers them)
+    const warns = checks.filter((c) => c.level === "warn" && !/Codex/.test(c.name));
+    expect(warns.map((c) => c.name)).toEqual(["демон"]);
   });
 
   it("fails on a Pi version other than the pinned one", async () => {

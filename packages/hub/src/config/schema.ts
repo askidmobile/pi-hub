@@ -143,7 +143,8 @@ export const CLIENT_DEFAULTS: Record<
     progress_every_sec: 60,
     delegation_on_connect: false,
   },
-  codex: { tool_list: "static", max_wait_sec: 870, delegation_on_connect: true },
+  // Off on connect like every client (stage 3 D-207): the hub refuses calls until /architect on.
+  codex: { tool_list: "static", max_wait_sec: 870, delegation_on_connect: false },
   mcp: { tool_list: "static", max_wait_sec: 50, delegation_on_connect: false },
 };
 

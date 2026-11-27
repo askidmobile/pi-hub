@@ -209,13 +209,16 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 - deviated: диалект `cloudflare-run` адаптер не поддерживает — такие пресеты не предлагаются в `init`.
 
 ### Phase 5: Codex (estimate: 6 h)
-- [ ] `cli/codex-profile.ts`: блок между метками, `.bak`, проверка TOML, поиск доверия (FR-207, FR-208, D-216)
-- [ ] `init` (шаг Codex) и `doctor` (FR-208, FR-210)
-- [ ] Профиль, `hooks.json`, скил и prompts Codex, README → `plugins/codex/*` (FR-207, FR-225)
-- [ ] Хук Stop с `--client codex` (FR-209); SessionStart не нужен (PD-211)
-- [ ] Тесты: профиль создаётся; повторный `init` на файле с `[hooks.state…]`, `[projects…]` и комментариями меняет только блок; `.bak`; `doctor` с доверием и без; хук через shim с `--client codex` блокирует один раз
+- [x] `cli/codex-profile.ts`: блок между метками, `.bak`, проверка TOML, поиск доверия (FR-207, FR-208, D-216)
+- [x] `init` (шаг Codex) и `doctor` (FR-208, FR-210)
+- [x] Профиль, `hooks.json`, скил и prompts Codex, README → `plugins/codex/*` (FR-207, FR-225)
+- [x] Хук Stop с `--client codex` (FR-209); SessionStart не нужен (PD-211)
+- [x] Тесты: профиль создаётся; повторный `init` на файле с `[hooks.state…]`, `[projects…]` и комментариями меняет только блок; `.bak`; `doctor` с доверием и без; хук через shim с `--client codex` блокирует один раз
 - [ ] Ручной прогон в `codex --profile pi-hub` (пользователь): вопрос воркера, хук Stop, ответ, итог
 - **Independent check:** тесты Codex зелёные; ручной прогон пройден.
+- deviated: у Codex в `CLIENT_DEFAULTS` было `delegation_on_connect: true` (совет ADR-0010) — противоречит D-207 и сценарию 1; исправлено на `false`, в ADR-0010 и `config/hub.example.yaml` — дополнение.
+- deviated: блок добавляется в конец профиля (только таблицы — ключи верхнего уровня Codex и пользователя остаются на месте), повторно заменяется на месте; профиль с pi-hub без меток, повреждённые метки или неразбираемый результат — отказ без изменения файла. Доверие ищется по записи `hooks.state."<путь>:stop:<группа>:<хук>"` с учётом собственных хуков Stop пользователя.
+- deviated: при разработке тест `init` (CLI, `--yes`) записал профиль в настоящий `~/.codex/pi-hub.config.toml` (в тестовом окружении не был задан `CODEX_HOME`); файл содержал только блок pi-hub и удалён, тесты `init` теперь работают с временным `CODEX_HOME` и проверяют, что профиль лёг туда.
 
 ### Phase 6: Эталоны и прогон (estimate: 8 h)
 - [ ] Шесть задач в `benchmarks/tasks/` (ошибка, функция с тестами, рефакторинг, обязательный вопрос, документация, типы) (FR-211)
@@ -241,10 +244,10 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | FR-204 | 2 | `models`, предупреждение, `routed_by = escalation` — ✅ |
 | FR-205 | 1, 2 | `task_model_runs`, `first_try_pass` — ✅ |
 | FR-206 | 1, 3 | запросы отчёта, `usage-report.ts`, фасад — ✅ |
-| FR-207 | 0, 5 | профиль Codex |
-| FR-208 | 5 | `init` + `codex-profile.ts` |
-| FR-209 | 5 | хук Stop `--client codex` |
-| FR-210 | 5 | `doctor` Codex |
+| FR-207 | 0, 5 | профиль Codex — ✅ |
+| FR-208 | 5 | `init` + `codex-profile.ts` — ✅ |
+| FR-209 | 5 | хук Stop `--client codex` — ✅ |
+| FR-210 | 5 | `doctor` Codex — ✅ |
 | FR-211 | 6 | эталонные задачи |
 | FR-212 | 6 | `scripts/bench.ts` |
 | FR-220 | 4 | `RoleRouter`, адаптер — ✅ |
@@ -252,7 +255,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | FR-222 | 4 | шаг роутера в учёте — ✅ |
 | FR-223 | 4 | `init` роутер — ✅ |
 | FR-224 | 4 | `router status/test/off`, `doctor` — ✅ |
-| FR-225 | 3, 5 | скилы Claude Code и Codex — 🔶 `usage_report`, эскалация (фаза 3) |
+| FR-225 | 3, 5 | скилы Claude Code и Codex — ✅ |
 | FR-230 | 7 | `pi-hub status` |
 
 ## Complexity & principle deviations

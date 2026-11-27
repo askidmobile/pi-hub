@@ -1,15 +1,10 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          { "type": "command", "command": "pi-hub hook session-start --client codex", "timeout": 2 }
-        ]
-      }
-    ],
     "Stop": [
       {
-        "hooks": [{ "type": "command", "command": "pi-hub hook stop --client codex", "timeout": 2 }]
+        "hooks": [
+          { "type": "command", "command": "pi-hub-shim hook stop --client codex", "timeout": 2 }
+        ]
       }
     ]
   }

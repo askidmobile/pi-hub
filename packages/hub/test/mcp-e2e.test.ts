@@ -41,7 +41,12 @@ function writeConfig(home: string, repo: string): void {
   );
 }
 
-async function connectClient(home: string, cwd: string, serveCommand?: string[]) {
+async function connectClient(
+  home: string,
+  cwd: string,
+  serveCommand?: string[],
+  kind: "claude-code" | "codex" = "claude-code",
+) {
   const listChanged: number[] = [];
   const client = new Client({ name: "test-senior", version: "0" });
   client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
@@ -57,7 +62,7 @@ async function connectClient(home: string, cwd: string, serveCommand?: string[])
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
-      args: [SHIM, "--client", "claude-code"],
+      args: [SHIM, "--client", kind],
       env,
       cwd,
     }),
@@ -329,10 +334,12 @@ describe("shim autostart and stub", () => {
 function runHook(
   home: string,
   input: Record<string, unknown>,
+  client?: "codex",
 ): Promise<{ code: number | null; stdout: string; ms: number }> {
   const started = Date.now();
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [SHIM, "hook", "stop"], {
+    const args = [SHIM, "hook", "stop", ...(client ? ["--client", client] : [])];
+    const child = spawn(process.execPath, args, {
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", PI_HUB_HOME: home },
       stdio: ["pipe", "pipe", "ignore"],
     });
@@ -387,6 +394,28 @@ describe("worker questions over shim (stage 2)", () => {
   };
   const pending = (r: Awaited<ReturnType<Client["callTool"]>>) =>
     (r.content as { text: string }[]).slice(1).map((c) => c.text);
+
+  it("Codex: off on connect with every tool listed; the Stop hook --client codex blocks once (stage 3 scenario 1)", async () => {
+    const { client } = await connectClient(home, repo, undefined, "codex");
+    clients.push(client);
+    expect(await toolNames(client)).toHaveLength(8);
+    const refused = await client.callTool({
+      name: "start",
+      arguments: { task: "x", repo, base_branch: "main" },
+    });
+    expect(refused.isError).toBe(true);
+    expect(text(refused)).toContain("режим архитектора выключен");
+    const { taskId, w } = await startAsk(client);
+    expect(w.status).toBe("needs_input");
+    expect((await runHook(home, { cwd: repo, stop_hook_active: true }, "codex")).stdout).toBe("");
+    const blocked = JSON.parse(
+      (await runHook(home, { cwd: repo, stop_hook_active: false }, "codex")).stdout,
+    );
+    expect(blocked.decision).toBe("block");
+    expect(blocked.reason).toContain(`${taskId}: Which storage should sessions use?`);
+    expect((await runHook(home, { cwd: repo, stop_hook_active: false }, "codex")).stdout).toBe("");
+    await client.callTool({ name: "cancel", arguments: { task_id: taskId } });
+  });
 
   it("wait, the line in every response and the Stop hook (once); another session sees nothing", async () => {
     const { client } = await connectClient(home, repo);

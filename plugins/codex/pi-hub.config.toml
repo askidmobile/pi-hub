@@ -1,25 +1,19 @@
-# Codex architect profile for pi-hub.
-# Install: copy to ~/.codex/pi-hub.config.toml, then run `codex --profile pi-hub`
-# (alias: codex-arch='codex --profile pi-hub'). Same login, history and sessions as plain Codex.
-# Verified on codex-cli 0.171.0: a profile file can define mcp_servers (ADR-0009).
+# Codex architect profile for pi-hub (stage 3, ADR-0009). Usually installed by `pi-hub init`:
+# it writes only the block between the markers into ~/.codex/pi-hub.config.toml and keeps
+# everything else (Codex stores hook trust and trusted folders in the same file).
+# Start with `codex --profile pi-hub`; trust the pi-hub hook once in /hooks.
+# Remote hub: command = "ssh", args = ["build-box", "pi-hub-shim", "--client", "codex"].
 
+# >>> pi-hub (managed by pi-hub init up to the closing marker; edit outside the block)
 [mcp_servers.pi-hub]
 command = "pi-hub-shim"
 args = ["--client", "codex"]
-# Remote hub: command = "ssh", args = ["build-box", "pi-hub-shim", "--client", "codex"]
-# wait() long-polls up to clients.codex.max_wait_sec = 870 s (ADR-0006).
 tool_timeout_sec = 900
-# Without this every pi-hub tool call asks for approval (and fails in `codex exec`).
 default_tools_approval_mode = "approve"
-
-[[hooks.SessionStart]]
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = "pi-hub hook session-start --client codex"
-timeout = 2
 
 [[hooks.Stop]]
 [[hooks.Stop.hooks]]
 type = "command"
-command = "pi-hub hook stop --client codex"
+command = "pi-hub-shim hook stop --client codex"
 timeout = 2
+# <<< pi-hub

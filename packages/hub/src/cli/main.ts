@@ -3,7 +3,8 @@ import { Command } from "commander";
 import { loadHub } from "../config/load.js";
 import { AlreadyRunningError, startDaemon } from "../daemon.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
-import { formatChecks, hasFailures, runDoctor } from "./doctor.js";
+import { inspectProfile, installProfile } from "./codex-profile.js";
+import { CODEX_TRUST_STEP, findInPath, formatChecks, hasFailures, runDoctor } from "./doctor.js";
 import {
   applyInit,
   askAnswers,
@@ -117,6 +118,7 @@ program
   .option("--router-key-env <name>", "variable of the System One key in ~/.pi-hub/.env")
   .option("--router-url <url>", "System One URL for a custom endpoint")
   .option("--no-plugin", "do not connect the Claude Code plugin")
+  .option("--no-codex", "do not install the Codex profile ~/.codex/pi-hub.config.toml")
   .option("--no-check", "skip the final doctor checks")
   .action(
     async (
@@ -127,6 +129,7 @@ program
         piBin?: string;
         extension: string[];
         plugin: boolean;
+        codex: boolean;
         check: boolean;
       } & RouterFlags,
     ) => {
@@ -178,6 +181,21 @@ program
           console.log(
             `Подключите плагин Claude Code вручную:\n${plugin.commands.map((c) => `  ${c}`).join("\n")}`,
           );
+        }
+      }
+
+      // Codex architect profile (stage 3 FR-208): only the pi-hub block, `.bak` before a change.
+      if (opts.codex && findInPath("codex")) {
+        try {
+          const p = installProfile();
+          const word = { created: "создан", updated: "обновлён", kept: "без изменений" }[p.action];
+          console.log(
+            `Профиль Codex ${p.path} — ${word}${p.backup ? ` (копия: ${p.backup})` : ""}.`,
+          );
+          if (!inspectProfile().trusted) console.log(`Разовый шаг: ${CODEX_TRUST_STEP}.`);
+        } catch (e) {
+          console.log(`Профиль Codex не изменён: ${(e as Error).message}`);
+          process.exitCode = 1;
         }
       }
 

@@ -13,6 +13,7 @@ import { allowlistedEnv } from "../pi-rpc/launcher.js";
 import { type PiModelInfo, PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
 import { parseModelRef } from "../router/model-resolver.js";
+import { inspectProfile } from "./codex-profile.js";
 import { FAILURES_WARN_AT, failuresInRow } from "./router.js";
 
 /**
@@ -114,6 +115,7 @@ export async function runDoctor(
   }
 
   checks.push(...routerChecks(config, secrets.values, join(paths.logsDir, "router.log")));
+  checks.push(...codexChecks(env));
 
   try {
     const { stdout } = await run("git", ["--version"], { timeout: 5_000 });
@@ -276,6 +278,38 @@ export function routerChecks(
   if (failures >= FAILURES_WARN_AT) {
     out.push(warn("умный роутер", `${failures} сбоев System One подряд: ${routerLog}`));
   }
+  return out;
+}
+
+export const CODEX_TRUST_STEP =
+  "откройте codex --profile pi-hub, наберите /hooks и доверьте хук pi-hub (Stop)";
+
+/**
+ * Codex (stage 3 FR-210): no Codex — one line, no error; otherwise the profile, the MCP
+ * server and hook commands, and whether Codex trusted the pi-hub hook (`trusted_hash`).
+ */
+export function codexChecks(
+  env: NodeJS.ProcessEnv,
+  codexBin = findInPath("codex", env.PATH),
+): Check[] {
+  const p = inspectProfile(env);
+  if (!codexBin && !p.exists) return [ok("Codex", "не установлен")];
+  if (!p.exists) return [warn("Codex", `нет профиля ${p.path}: запустите pi-hub init`)];
+  if (p.error) return [fail("Codex", `${p.path}: ${p.error}`)];
+  const out: Check[] = [];
+  out.push(
+    p.mcpOk
+      ? ok("Codex", `профиль ${p.path}`)
+      : fail(
+          "Codex",
+          `в профиле нет [mcp_servers.pi-hub] с pi-hub-shim --client codex: pi-hub init`,
+        ),
+  );
+  if (!p.hook) out.push(fail("хук Codex", "в профиле нет хука Stop pi-hub: pi-hub init"));
+  else if (!p.hook.command.includes("--client codex")) {
+    out.push(fail("хук Codex", `команда без --client codex: ${p.hook.command}`));
+  } else if (!p.trusted) out.push(warn("хук Codex", `не доверен: ${CODEX_TRUST_STEP}`));
+  else out.push(ok("хук Codex", "доверен"));
   return out;
 }
 

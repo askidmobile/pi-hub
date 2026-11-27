@@ -20,7 +20,7 @@ limits:
   # max_task_usd: 2.0
 clients: # ADR-0006, ADR-0010
   claude-code: { tool_list: dynamic, max_wait_sec: 1500, progress_every_sec: 60 }
-  codex: { tool_list: static, max_wait_sec: 870, delegation_on_connect: true }
+  codex: { tool_list: static, max_wait_sec: 870 } # off on connect, like every client (D-207)
   mcp: { tool_list: static, max_wait_sec: 50 }
 orphan_after_minutes: 30
 notify_user_after_minutes: 15
