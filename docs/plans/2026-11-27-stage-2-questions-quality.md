@@ -165,11 +165,11 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 ### Scripts and docs
 
-- [ ] `scripts/e2e.ts` — режим `--scenario ask`: задача, где воркер обязан спросить (инструкция в тексте задачи), ответ через `send`, `.pi-hub.toml` с командой проверки во временном репозитории, проверка вердикта.
-- [ ] `config/hub.example.yaml`, `config/pi-hub.project.example.toml`, `config/prices.example.yaml` — пределы закомментированы, `quality.timeout_minutes`, пример цены для провайдера из расширения.
-- [ ] `docs/adr/0005-worker-questions-via-extension-ui.md` — дополнение: маркер диалога, живой процесс на `needs_input`, вопрос текстом.
-- [ ] `docs/adr/0012-quality-gate.md` (новый) — проверка базы, авто-круг, блокировка на проект.
-- [ ] `docs/architecture/task-lifecycle.md` — `done → running`, `planning`, авто-круг.
+- [x] `scripts/e2e.ts` — режим `--scenario ask`: задача, где воркер обязан спросить (инструкция в тексте задачи), ответ через `send`, `.pi-hub.toml` с командой проверки во временном репозитории, проверка вердикта.
+- [x] `config/hub.example.yaml`, `config/pi-hub.project.example.toml`, `config/prices.example.yaml` — пределы закомментированы, `quality.timeout_minutes`, пример цены для провайдера из расширения.
+- [x] `docs/adr/0005-worker-questions-via-extension-ui.md` — дополнение: маркер диалога, живой процесс на `needs_input`, вопрос текстом.
+- [x] `docs/adr/0012-quality-gate.md` (новый) — проверка базы, авто-круг, блокировка на проект.
+- [x] `docs/architecture/task-lifecycle.md` — `done → running`, `planning`, авто-круг.
 
 ## Implementation phases
 
@@ -253,10 +253,13 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 - **Independent check:** интеграционный тест «вопрос тремя путями» проходит через настоящий shim.
 
 ### Phase 6: Сквозная проверка и закрытие (estimate: 4 h)
-- [ ] `scripts/e2e.ts --scenario ask` на `9router/Deepseek-v4.1-flash`: вопрос через `wait`, ответ `send`, вердикт проверки по команде из `.pi-hub.toml`; строка стоимости «цена неизвестна» и с ручной ценой
+- [x] `scripts/e2e.ts --scenario ask` на `9router/Deepseek-v4.1-flash`: вопрос через `wait`, ответ `send`, вердикт проверки по команде из `.pi-hub.toml`; строка стоимости «цена неизвестна» и с ручной ценой
 - [ ] Ручной прогон в Claude Code: вопрос воркера, хук Stop, ответ, FAIL → `send` → PASS
-- [ ] ADR-0005 (дополнение), ADR-0012 (проверка качества), `docs/architecture/task-lifecycle.md`
-- [ ] `pnpm build && pnpm lint && pnpm typecheck && pnpm test`, CI зелёный
+- [x] ADR-0005 (дополнение), ADR-0012 (проверка качества), `docs/architecture/task-lifecycle.md`
+- [x] `pnpm build && pnpm lint && pnpm typecheck && pnpm test`, CI зелёный
+- deviated: `pnpm e2e --scenario ask` прогнан 2026-11-27 на `9router/Deepseek-v4.1-flash` (расширение `~/.pi/agent/extensions/9router.ts`): воркер спросил через `ask` (варианты a.txt/b.txt), `wait` вернул `needs_input`, строка «ожидают ответа: t_0001 (1 вопрос)» пришла в ответе `status`, `send` → `done`, проверка `PASS` по команде `.pi-hub.toml`, `questions {1, 1}`, `answer.txt` на ветке; стоимость «цена неизвестна» (3 шага), вторая задача с ценой в `prices.yaml` — «0,004 $ … по сессии 0,004 $ без учёта 3 шагов с неизвестной ценой».
+- deviated: ручной прогон в Claude Code не сделан: нужен залогиненный Claude Code с установленным плагином, личную конфигурацию Claude Code агент не меняет. Путь хука проверен через настоящий `pi-hub-shim hook stop` в интеграционных тестах; ручная проверка остаётся за автором.
+- deviated: тест хука при остановленном хабе — 20 вызовов, 95-й перцентиль ≤ 100 мс, как в критерии успеха.
 - **Independent check:** ворота этапа 2 из спецификации отмечены.
 
 **Итого:** ~41 h.

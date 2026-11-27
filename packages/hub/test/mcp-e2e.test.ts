@@ -429,7 +429,9 @@ describe("worker questions over shim (stage 2)", () => {
     expect(log).toContain('"why":"stop_hook_active"');
   });
 
-  it("the hook does not block with mode off, or when the hub is down, and stays fast (FR-110)", async () => {
+  it("the hook does not block with mode off, or when the hub is down, and stays fast (FR-110)", {
+    timeout: 15_000,
+  }, async () => {
     const { client } = await connectClient(home, repo);
     clients.push(client);
     await startAsk(client);
@@ -448,9 +450,14 @@ describe("worker questions over shim (stage 2)", () => {
     clients.splice(0);
     await hub?.close();
     hub = undefined;
-    const down = await runHook(home, { cwd: repo });
-    expect(down).toMatchObject({ code: 0, stdout: "" });
-    expect(down.ms).toBeLessThanOrEqual(100);
+    const downTimes: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      const down = await runHook(home, { cwd: repo });
+      expect(down).toMatchObject({ code: 0, stdout: "" });
+      downTimes.push(down.ms);
+    }
+    downTimes.sort((a, b) => a - b);
+    expect(downTimes[18]).toBeLessThanOrEqual(100);
     expect(readFileSync(join(home, "logs", "hooks.log"), "utf8")).toContain('"source":"shim"');
   });
 

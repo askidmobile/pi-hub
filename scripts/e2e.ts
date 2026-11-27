@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 /**
- * Stage 1 gate on a real Pi and a real model (plan PD-002): run by hand before closing the
- * stage and after a Pi upgrade. Not in CI: it needs a provider and costs a few cents.
+ * Stage gates on a real Pi and a real model (stage 1 plan PD-002, stage 2 plan phase 6): run
+ * by hand before closing a stage and after a Pi upgrade. Not in CI: it needs a provider and
+ * costs a few cents.
  *
- *   pnpm build && pnpm e2e --model <provider>/<id> [--extension <path>]... [--keep]
+ *   pnpm build && pnpm e2e --model <provider>/<id> [--extension <path>]... [--scenario ask] [--keep]
+ *
+ * `--scenario basic` (default, stage 1): start -> wait -> result -> merge.
+ * `--scenario ask` (stage 2): the worker must ask with `ask`; `wait` returns the question, the
+ * pending line is in the next response, `send` answers it; the quality command from
+ * `.pi-hub.toml` gives the verdict. Then the cost line without a manual price, and a second
+ * small task with a price in `prices.yaml`.
  *
  * A temp git repo and a separate PI_HUB_HOME; an SDK MCP client talks to the hub through
  * the real pi-hub-shim (which starts the daemon): architect_mode on -> start -> wait ->
@@ -37,22 +44,28 @@ async function fromHub<T>(specifier: string): Promise<T> {
   return (await import(pathToFileURL(requireFromHub.resolve(specifier)).href)) as T;
 }
 
-function args(): { model: string; extensions: string[]; keep: boolean } {
+type Scenario = "basic" | "ask";
+
+function args(): { model: string; extensions: string[]; keep: boolean; scenario: Scenario } {
   const argv = process.argv.slice(2);
   const extensions: string[] = [];
   let model = process.env.PI_HUB_E2E_MODEL ?? "";
   let keep = false;
+  let scenario: Scenario = "basic";
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--model") model = argv[++i] ?? "";
     else if (a === "--extension") extensions.push(resolve(argv[++i] ?? ""));
     else if (a === "--keep") keep = true;
+    else if (a === "--scenario") scenario = argv[++i] === "ask" ? "ask" : "basic";
   }
   if (!/^[^/\s]+\/\S+$/.test(model)) {
-    console.error("usage: pnpm e2e --model <provider>/<id> [--extension <path>]... [--keep]");
+    console.error(
+      "usage: pnpm e2e --model <provider>/<id> [--extension <path>]... [--scenario ask] [--keep]",
+    );
     process.exit(2);
   }
-  return { model, extensions, keep };
+  return { model, extensions, keep, scenario };
 }
 
 function step(msg: string): void {
@@ -81,7 +94,7 @@ function filesContaining(dir: string, needle: string, skip: string[]): string[] 
 }
 
 async function main(): Promise<void> {
-  const { model, extensions, keep } = args();
+  const { model, extensions, keep, scenario } = args();
   if (!existsSync(SHIM) || !existsSync(join(HUB_DIST, "cli/main.js"))) {
     console.error("build first: pnpm build");
     process.exit(2);
@@ -121,6 +134,13 @@ async function main(): Promise<void> {
     git(repo, "config", "user.email", "e2e@example.invalid");
     git(repo, "config", "commit.gpgsign", "false");
     writeFileSync(join(repo, "README.md"), "# e2e\n");
+    if (scenario === "ask") {
+      // passes on the base and when every .txt file the worker adds is not empty
+      writeFileSync(
+        join(repo, ".pi-hub.toml"),
+        `[quality]\ntest = "test -z \\"$(find . -name '*.txt' -empty -not -path './.git/*')\\""\ntimeout_minutes = 2\n`,
+      );
+    }
     git(repo, "add", ".");
     git(repo, "commit", "-q", "-m", "init");
     const repoRoot = git(repo, "rev-parse", "--show-toplevel");
@@ -168,52 +188,140 @@ async function main(): Promise<void> {
         env,
       }),
     );
+    /** The JSON of a tool response; later text items (the pending questions line) go to `pending`. */
+    let pending: string[] = [];
     const call = async (name: string, a: Record<string, unknown> = {}) => {
       const res = (await client?.callTool({ name, arguments: a }, undefined, {
         timeout: 1_600_000,
         resetTimeoutOnProgress: true,
         onprogress: (p) => console.log(`  … ${p.message ?? p.progress}`),
       })) as { isError?: boolean; content: { type: string; text: string }[] };
-      const text = res.content.map((c) => c.text).join("");
-      if (res.isError) throw new Error(`${name}: ${text}`);
-      return JSON.parse(text) as Record<string, unknown>;
+      if (res.isError) throw new Error(`${name}: ${res.content.map((c) => c.text).join(" ")}`);
+      pending = res.content.slice(1).map((c) => c.text);
+      return JSON.parse(res.content[0]?.text ?? "null") as Record<string, unknown>;
+    };
+    const waitUntil = async (taskId: string, stop: (status: string) => boolean) => {
+      let w: Record<string, unknown> = {};
+      for (let i = 0; i < 6; i++) {
+        w = await call("wait", { task_id: taskId, timeout: 600 });
+        console.log(`  ${taskId}: ${String(w.status)}`);
+        if (stop(w.status as string)) break;
+      }
+      return w;
+    };
+    const check = (cond: unknown, message: string) => {
+      if (!cond) throw new Error(message);
+      console.log(`  ✓ ${message}`);
     };
 
     const before = (await client.listTools()).tools.map((t) => t.name);
     console.log(`  tools while off: ${before.join(", ")}`);
     console.log(`  ${JSON.stringify(await call("architect_mode", { mode: "on" }))}`);
 
-    step("start");
-    const started = await call("start", {
-      task:
-        "Create a file hello.txt containing exactly the line `hello from pi-hub` and commit it. " +
-        "Do not change anything else.",
-      repo: repoRoot,
-      base_branch: "main",
-    });
-    const taskId = started.task_id as string;
-    console.log(`  ${JSON.stringify(started)}`);
+    if (scenario === "ask") {
+      step("start (the worker must ask)");
+      const started = await call("start", {
+        task:
+          "Create a text file containing the line `hello` and commit it. Before creating it you " +
+          "MUST call the `ask` tool to ask the architect what to name the file (offer options " +
+          "a.txt and b.txt). Use the answer. Do not change anything else.",
+        repo: repoRoot,
+        base_branch: "main",
+      });
+      const taskId = started.task_id as string;
+      console.log(`  ${JSON.stringify(started)}`);
 
-    step("wait");
-    let status = "";
-    for (let i = 0; i < 6; i++) {
-      const w = await call("wait", { task_id: taskId, timeout: 600 });
-      status = w.status as string;
-      console.log(`  ${taskId}: ${status}`);
-      if (status !== "running" && status !== "queued" && status !== "planning") break;
+      step("wait -> needs_input");
+      const w = await waitUntil(taskId, (st) => st !== "running" && st !== "queued");
+      console.log(`  ${JSON.stringify(w.question)}`);
+      check(w.status === "needs_input", "wait returned needs_input");
+      check(
+        (w.question as { question?: string } | undefined)?.question,
+        "wait carries the question",
+      );
+      await call("status");
+      check(pending[0]?.startsWith(`ожидают ответа: ${taskId}`), `pending line: ${pending[0]}`);
+
+      step("send the answer");
+      console.log(
+        `  ${JSON.stringify(await call("send", { task_id: taskId, message: "Name the file answer.txt" }))}`,
+      );
+      const done = await waitUntil(
+        taskId,
+        (st) => st !== "running" && st !== "checking" && st !== "queued",
+      );
+      console.log(`  cost: ${String(done.cost_line)}`);
+      check(done.status === "done", "task done after the answer");
+      check(pending.length === 0, "no pending line after the answer");
+
+      step("result");
+      const result = await call("result", { task_id: taskId });
+      console.log(JSON.stringify(result, null, 2));
+      const quality = result.quality as { status: string };
+      check(quality.status === "PASS", `quality ${quality.status} from .pi-hub.toml`);
+      check(
+        JSON.stringify(result.questions) === JSON.stringify({ asked: 1, answered: 1 }),
+        "one question asked and answered",
+      );
+      const branch = result.branch as string;
+      check(git(repoRoot, "show", `${branch}:answer.txt`) === "hello", "answer.txt on the branch");
+      const unknown = (result.usage as { unknown_price_steps?: number }).unknown_price_steps;
+      console.log(
+        unknown
+          ? `  cost line says the price is unknown (${unknown} steps): ${String(done.cost_line)}`
+          : `  the provider or Pi's catalog priced every step: ${String(done.cost_line)}`,
+      );
+
+      step("second task with a manual price in prices.yaml");
+      writeFileSync(
+        join(home, "prices.yaml"),
+        `- { provider: ${provider}, model: "${model.slice(provider.length + 1)}", input: 0.3, output: 1.2 }\n`,
+      );
+      const second = await call("start", {
+        task: "Create a file second.txt containing exactly the line `second` and commit it.",
+        repo: repoRoot,
+        base_branch: "main",
+      });
+      const w2 = await waitUntil(
+        second.task_id as string,
+        (st) => st === "done" || st === "failed",
+      );
+      console.log(`  cost: ${String(w2.cost_line)}`);
+      check(w2.status === "done", "second task done");
+      check(!/^цена неизвестна/.test(String(w2.cost_line)), "the second task has a price");
+    } else {
+      step("start");
+      const started = await call("start", {
+        task:
+          "Create a file hello.txt containing exactly the line `hello from pi-hub` and commit it. " +
+          "Do not change anything else.",
+        repo: repoRoot,
+        base_branch: "main",
+      });
+      const taskId = started.task_id as string;
+      console.log(`  ${JSON.stringify(started)}`);
+
+      step("wait");
+      let status = "";
+      for (let i = 0; i < 6; i++) {
+        const w = await call("wait", { task_id: taskId, timeout: 600 });
+        status = w.status as string;
+        console.log(`  ${taskId}: ${status}`);
+        if (status !== "running" && status !== "queued" && status !== "planning") break;
+      }
+
+      step("result");
+      const result = await call("result", { task_id: taskId });
+      console.log(JSON.stringify(result, null, 2));
+      if (result.status !== "done") throw new Error(`task ended ${String(result.status)}`);
+
+      step("git merge");
+      const branch = result.branch as string;
+      git(repoRoot, "merge", "--no-ff", "-q", "-m", `merge ${branch}`, branch);
+      const hello = readFileSync(join(repoRoot, "hello.txt"), "utf8").trim();
+      console.log(`  hello.txt: ${hello}`);
+      if (hello !== "hello from pi-hub") throw new Error("hello.txt has unexpected content");
     }
-
-    step("result");
-    const result = await call("result", { task_id: taskId });
-    console.log(JSON.stringify(result, null, 2));
-    if (result.status !== "done") throw new Error(`task ended ${String(result.status)}`);
-
-    step("git merge");
-    const branch = result.branch as string;
-    git(repoRoot, "merge", "--no-ff", "-q", "-m", `merge ${branch}`, branch);
-    const hello = readFileSync(join(repoRoot, "hello.txt"), "utf8").trim();
-    console.log(`  hello.txt: ${hello}`);
-    if (hello !== "hello from pi-hub") throw new Error("hello.txt has unexpected content");
 
     if (key) {
       step(`key leak check (${keyVar})`);
