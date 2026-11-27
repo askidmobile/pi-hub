@@ -135,6 +135,18 @@ export class PiRpcClient extends EventEmitter<PiRpcClientEvents> {
     this.child.stdin.write(encodeJsonl(record));
   }
 
+  /**
+   * Answers an Extension UI dialog (`extension_ui_request`). `value` for `input`/`select`/
+   * `editor`; `null` cancels the dialog (the extension sees `undefined`).
+   */
+  respondUi(id: string, value: string | null): void {
+    this.send(
+      value === null
+        ? { type: "extension_ui_response", id, cancelled: true }
+        : { type: "extension_ui_response", id, value },
+    );
+  }
+
   /** Send a command and wait for its response `data`. */
   request<T = unknown>(
     command: Record<string, unknown> & { type: string },
@@ -206,7 +218,8 @@ export class PiRpcClient extends EventEmitter<PiRpcClientEvents> {
 
   /**
    * Resolves on the next `agent_settled`; rejects if the process exits first.
-   * Install before `prompt()` so a fast run is not missed.
+   * Install before `prompt()` so a fast run is not missed. May be called again for every
+   * new `prompt` in the same process (answers to text questions, quality rounds).
    */
   waitSettled(): Promise<{ aborted: boolean }> {
     if (this.exitError) return Promise.reject(this.exitError);

@@ -144,6 +144,36 @@ export class WorkspaceManager {
     return out ? out.split("\n") : [];
   }
 
+  /** Committed and uncommitted changes relative to the base (plan-phase check, FR-125). */
+  async touchedFiles(path: string, baseCommit: string): Promise<string[]> {
+    const committed = await this.changedFiles(path, baseCommit);
+    // `git()` trims stdout, so porcelain status (leading space) is not used here.
+    const modified = await git(path, ["diff", "--name-only", "HEAD"]);
+    const untracked = await git(path, ["ls-files", "--others", "--exclude-standard"]);
+    const lines = (s: string) => (s ? s.split("\n") : []);
+    return [...new Set([...committed, ...lines(modified), ...lines(untracked)])].filter(Boolean);
+  }
+
+  /**
+   * True when the task branch has commits of its own and they are all in `baseBranch`
+   * already (FR-123: rework of a merged branch needs a new merge).
+   */
+  async isMergedInto(
+    repoRoot: string,
+    branch: string,
+    baseBranch: string,
+    baseCommit: string,
+  ): Promise<boolean> {
+    const tip = await this.resolveCommit(repoRoot, branch);
+    if (!tip || tip === baseCommit) return false;
+    try {
+      await git(repoRoot, ["merge-base", "--is-ancestor", tip, baseBranch]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async commitsSince(path: string, baseCommit: string): Promise<CommitInfo[]> {
     const out = await git(path, ["log", "--format=%H%x00%B%x1e", `${baseCommit}..HEAD`]);
     return out

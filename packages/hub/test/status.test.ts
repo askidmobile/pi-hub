@@ -9,8 +9,10 @@ describe("task status machine", () => {
     }
   });
 
-  it("needs_input returns to planning or running", () => {
-    expect(TRANSITIONS.needs_input).toEqual(expect.arrayContaining(["planning", "running"]));
+  it("needs_input returns to planning or running, survives a hub restart as interrupted", () => {
+    expect(TRANSITIONS.needs_input).toEqual(
+      expect.arrayContaining(["planning", "running", "interrupted", "cancelled"]),
+    );
   });
 
   it("interrupted and failed can continue in the same Pi session (spec D-007)", () => {

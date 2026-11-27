@@ -20,7 +20,9 @@ export const TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = 
   queued: ["planning", "running", "cancelled"],
   planning: ["needs_input", "running", "failed", "cancelled", "interrupted", "orphaned"],
   running: ["needs_input", "checking", "failed", "cancelled", "interrupted", "orphaned"],
-  needs_input: ["planning", "running", "cancelled", "orphaned"],
+  // interrupted: hub stopped while waiting for an answer (the question stays open, FR-106);
+  // failed: the worker died while waiting.
+  needs_input: ["planning", "running", "failed", "cancelled", "interrupted", "orphaned"],
   checking: ["done", "failed", "running", "interrupted"],
   // done = ready to merge, not irreversible: `send` reopens it for rework in the same Pi
   // session (stage 2 spec D-102).

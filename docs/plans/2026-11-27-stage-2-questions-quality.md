@@ -69,12 +69,12 @@ graph TD
 - [x] `storage/repos.ts` — вопросы: `insertQuestion`, `openQuestion(taskId)`, `answerQuestion`, `closeQuestion`, `openQuestionsForSession(sessionId)`, `markHookDelivered`, `countQuestions(taskId)`; базовые проверки: `getBaseline(projectId, commit)`, `putBaseline`; сессии: `sessionsByParentPids(pids)`, `connectedSessionsForProject(projectId, client)`.
 - [x] `config/schema.ts` — `limits.max_task_usd` и `limits.max_task_minutes` необязательные, без значений по умолчанию (D-105); в `ProjectConfig.quality` — `timeout_minutes` (по умолчанию 15).
 - [x] `config/prices.ts` — загрузка `~/.pi-hub/prices.yaml` (zod-схема по `config/prices.example.yaml`), перечитывание по `mtime`, поиск цены по `provider/model`.
-- [ ] `pi-rpc/pi-rpc-client.ts` — `respondUi(id, value | cancelled)`; ожидание `agent_settled` можно запускать повторно (несколько `prompt` в одном процессе).
-- [ ] `tasks/questions.ts` (новый) — `QuestionService`: разбор диалога pi-hub (маркер в `title`), запись вопроса, ответ, отказ на чужие диалоги, текст для хука и строки вопросов.
+- [x] `pi-rpc/pi-rpc-client.ts` — `respondUi(id, value | cancelled)`; ожидание `agent_settled` можно запускать повторно (несколько `prompt` в одном процессе).
+- [x] `tasks/questions.ts` (новый) — `QuestionService`: разбор диалога pi-hub (маркер в `title`), запись вопроса, ответ, отказ на чужие диалоги, текст для хука и строки вопросов.
 - [ ] `tasks/worker-runner.ts` — жизненный цикл с живым Pi: обработка `ui_request` (→ `needs_input`, пауза таймера), `answer(text)`; `clarify` (`planning`); вопрос текстом (FR-120) до `ensureSummary`; финализация → проверка качества → авто-круг → итог; остановка Pi только в конце; пределы — только если заданы.
 - [ ] `tasks/finalize.ts` — `detectTextQuestion(finalText)`; `detectTestTampering(diff)` (удалённые файлы тестов, пометки пропуска); предупреждение о файлах, изменённых в фазе плана.
-- [ ] `tasks/prompt.ts` + `packages/pi-extension/src/worker-prompt.md` — правила `ask` (FR-115), запрет трогать тесты ради проверки (FR-121), отдельный блок для фазы плана (`clarify`).
-- [ ] `tasks/task-service.ts` — `send`: `needs_input` (живой процесс → ответ; `interrupted` с открытым вопросом → продолжение с текстом «вопрос/ответ»), `done` (доработка, `attempt+1`, предупреждение о слитой ветке); `waitFor` возвращает вопрос; `pump()` не считает задачи в `needs_input`; `start(clarify)`; `recover()` сохраняет открытый вопрос.
+- [x] `tasks/prompt.ts` + `packages/pi-extension/src/worker-prompt.md` — правила `ask` (FR-115), запрет трогать тесты ради проверки (FR-121), отдельный блок для фазы плана (`clarify`).
+- [x] `tasks/task-service.ts` — `send`: `needs_input` (живой процесс → ответ; `interrupted` с открытым вопросом → продолжение с текстом «вопрос/ответ»), `done` (доработка, `attempt+1`, предупреждение о слитой ветке); `waitFor` возвращает вопрос; `pump()` не считает задачи в `needs_input`; `start(clarify)`; `recover()` сохраняет открытый вопрос.
 - [ ] `quality/quality-gate.ts` — реализация `QualityGate`: команды по очереди в worktree, окружение по белому списку, таймаут с убийством группы, полный вывод в `logs/<task_id>.quality.log`, `issues` ≤ 10 × 200; проверка базы во временном worktree (с `setup`) и кэш в `quality_baselines`; блокировка на проект.
 - [ ] `workspaces/workspace-manager.ts` — общий запуск команды (`runCommand`) для `setup` и проверки; временный worktree базы (`createBaselineWorktree`/удаление); `diffNameStatus(base)`; `isMergedInto(branch, base)`.
 - [ ] `accounting/accounting.ts` — цепочка источников (FR-116), `unknown`, цена на момент шага, итог по сессии с числом неизвестных шагов; `formatCostLine` с «цена неизвестна».
@@ -149,8 +149,8 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 ### Pi extension (`packages/pi-extension/src`)
 
-- [ ] `index.ts` — инструмент `ask(question, options?)`: `ctx.ui.input` с `title` = маркер + JSON вопроса (без таймаута); возвращает модели текст ответа или «ответа нет: решай сам и запиши допущение» при отмене.
-- [ ] `worker-prompt.md` — FR-115, FR-121, блок фазы плана.
+- [x] `index.ts` — инструмент `ask(question, options?)`: `ctx.ui.input` с `title` = маркер + JSON вопроса (без таймаута); возвращает модели текст ответа или «ответа нет: решай сам и запиши допущение» при отмене.
+- [x] `worker-prompt.md` — FR-115, FR-121, блок фазы плана.
 
 ### Fake worker (`packages/fake-worker/src/index.ts`)
 
@@ -193,14 +193,22 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 - **Independent check:** `pnpm test` и `pnpm typecheck` зелёные; БД этапа 1 мигрирует без потери шагов.
 
 ### Phase 2: Вопросы без MCP (estimate: 10 h)
-- [ ] Расширение: `ask` + промпт (FR-101, FR-115, FR-121) → `packages/pi-extension/src/*`
-- [ ] `PiRpcClient.respondUi`, повторное ожидание `agent_settled`
-- [ ] `tasks/questions.ts`: разбор маркера, запись, ответ, отказ чужим диалогам
-- [ ] `WorkerRun`: живой процесс, `needs_input` с паузой таймера, `answer`, остановка только в конце; пределы только если заданы (FR-118)
-- [ ] Вопрос текстом (FR-120) до `ensureSummary`; `clarify` и предупреждение о правках в фазе плана (FR-125)
-- [ ] `TaskService`: `send` для `needs_input`/`done`/`interrupted` с открытым вопросом (FR-104…FR-106, FR-123); `pump()` без `needs_input` (PD-101); `waitFor` с вопросом; `recover()`
-- [ ] Фейковый воркер: `ask`, `ask-twice`, `clarify`, `text-question`; контрактный тест на фикстуре фазы 0
-- [ ] Тесты (на уровне `TaskService`): вопрос → `needs_input` ≤ 2 с → `send` → `done`; два вопроса подряд; рестарт в `needs_input` → `interrupted` → `send` → `done`; `cancel` в `needs_input`; вопрос текстом; `clarify` без правок и с правками; `send` на `done` с новой финализацией и предупреждением о слитой ветке; ожидающая задача не держит слот; без пределов задача не останавливается
+- [x] Расширение: `ask` + промпт (FR-101, FR-115, FR-121) → `packages/pi-extension/src/*`
+- [x] `PiRpcClient.respondUi`, повторное ожидание `agent_settled`
+- [x] `tasks/questions.ts`: разбор маркера, запись, ответ, отказ чужим диалогам
+- [x] `WorkerRun`: живой процесс, `needs_input` с паузой таймера, `answer`, остановка только в конце; пределы только если заданы (FR-118)
+- [x] Вопрос текстом (FR-120) до `ensureSummary`; `clarify` и предупреждение о правках в фазе плана (FR-125)
+- [x] `TaskService`: `send` для `needs_input`/`done`/`interrupted` с открытым вопросом (FR-104…FR-106, FR-123); `pump()` без `needs_input` (PD-101); `waitFor` с вопросом; `recover()`
+- [x] Фейковый воркер: `ask`, `ask-twice`, `clarify`, `text-question`; контрактный тест на фикстуре фазы 0
+- [x] Тесты (на уровне `TaskService`): вопрос → `needs_input` ≤ 2 с → `send` → `done`; два вопроса подряд; рестарт в `needs_input` → `interrupted` → `send` → `done`; `cancel` в `needs_input`; вопрос текстом; `clarify` без правок и с правками; `send` на `done` с новой финализацией и предупреждением о слитой ветке; ожидающая задача не держит слот; без пределов задача не останавливается
+- deviated: `needs_input` дополнен переходами в `interrupted` (остановка хаба, вопрос остаётся открытым — FR-106) и `failed` (воркер умер во время ожидания). Версия протокола не повышалась: 0.2.0 ещё не выпущена.
+- deviated: блок фазы плана — первое сообщение задачи (`planPhaseMessage` в `tasks/prompt.ts`), а не системный промпт: та же сессия Pi после ответа переходит к реализации, а системный промпт с запретом правок остался бы в силе.
+- deviated: `detectTextQuestion` — в `tasks/questions.ts` рядом с остальной логикой вопросов, а не в `finalize.ts`; `QuestionService` — набор функций, состояние ожидания держит `WorkerRun`. Текст для хука и строки вопросов — фаза 5.
+- deviated: вид вопроса определяет хаб по статусу задачи (`ask` в `planning` → `plan`), расширение передаёт только вопрос и варианты. Фаза плана, закончившаяся текстом без `ask`, тоже становится вопросом `plan`. Ответ на план всегда ведёт в `running` (D-108).
+- deviated: из фазы 3 взят `WorkspaceManager.isMergedInto` (нужен FR-123 в тестах этой фазы) и добавлен `touchedFiles` (закоммиченные и незакоммиченные правки для FR-125).
+- deviated: `send` теперь асинхронный и дожидается остановки Pi у задачи, которая уже `done`/`failed`, но ещё освобождает процесс: иначе `send` сразу после `wait` получал «задача ещё выполняется». Ошибка была и на этапе 1 для `failed`.
+- deviated: при `send` на `done` предупреждения задачи сбрасываются: новая финализация считает их заново.
+- deviated: фейковый воркер получил ещё сценарии `clarify-edit` (правка в фазе плана) и `foreign-dialog` (чужой диалог → отказ); тестовая обвязка `TaskService` вынесена в `test/task-harness.ts`.
 - **Independent check:** интеграционные тесты сценариев 1 и 3 на уровне `TaskService` зелёные.
 
 ### Phase 3: Проверка качества (estimate: 10 h)
@@ -242,12 +250,12 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 | Requirement | Phase | Tasks |
 |-------------|-------|-------|
-| FR-101 | 2 | `pi-extension`: инструмент `ask` |
-| FR-102 | 2 | `tasks/questions.ts`, обработка `ui_request` в `WorkerRun` |
-| FR-103 | 2, 5 | `waitFor` с вопросом, фасад `wait` |
-| FR-104 | 2 | `TaskService.send` для `needs_input`, `respondUi` |
+| FR-101 ✅ | 2 | `pi-extension`: инструмент `ask` |
+| FR-102 ✅ | 2 | `tasks/questions.ts`, обработка `ui_request` в `WorkerRun` |
+| FR-103 🔶 | 2, 5 | `waitFor` с вопросом, фасад `wait` |
+| FR-104 ✅ | 2 | `TaskService.send` для `needs_input`, `respondUi` |
 | FR-105 🔶 | 1, 2 | `done → running`, `send` для `done` |
-| FR-106 | 2 | `recover()`, продолжение с «вопрос/ответ» |
+| FR-106 ✅ | 2 | `recover()`, продолжение с «вопрос/ответ» |
 | FR-107 | 5 | строка ожидающих вопросов в фасаде |
 | FR-108 🔶 | 1, 5 | `HookQuery`, `hook-resolver.ts`, `unix-server.ts` |
 | FR-109 | 5 | `shim/hook.ts`, `hooks.json`, отметка доставки |
@@ -256,20 +264,20 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | FR-112 | 3 | вердикт, лог, `issues` |
 | FR-113 | 3 | авто-круг в `WorkerRun` |
 | FR-114 | 3 | блокировка на проект |
-| FR-115 | 2 | `worker-prompt.md` |
+| FR-115 ✅ | 2 | `worker-prompt.md` |
 | FR-116 🔶 | 1, 4 | `prices.ts`, цепочка источников, миграция `steps` |
 | FR-117 | 4 | `formatCostLine`, итог по сессии |
-| FR-118 🔶 | 1, 2 | необязательные пределы, пауза таймера в `needs_input` |
+| FR-118 ✅ | 1, 2 | необязательные пределы, пауза таймера в `needs_input` |
 | FR-119 | 3 | проверка базы, `quality_baselines` |
-| FR-120 | 2 | `detectTextQuestion` до `ensureSummary` |
-| FR-121 | 2, 3 | промпт, `detectTestTampering` |
+| FR-120 ✅ | 2 | `detectTextQuestion` до `ensureSummary` |
+| FR-121 🔶 | 2, 3 | промпт, `detectTestTampering` |
 | FR-122 | 5 | запасной путь в `hook-resolver.ts` |
-| FR-123 | 2, 3 | `isMergedInto`, предупреждение в `send` |
-| FR-125 | 2 | `clarify`, фаза `planning` |
+| FR-123 ✅ | 2, 3 | `isMergedInto`, предупреждение в `send` |
+| FR-125 ✅ | 2 | `clarify`, фаза `planning` |
 | FR-126 | 5 | скил архитектора |
 | FR-127 | 3 | конверт |
 | FR-128 | 4, 5 | `doctor`: цены и хук |
-| FR-129 | 2, 3 | сценарии фейкового воркера |
+| FR-129 🔶 | 2, 3 | сценарии фейкового воркера |
 | FR-130 | 5 | `pi-hub status` |
 
 ## Complexity & principle deviations
@@ -326,4 +334,4 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 | # | Description | Phase | Priority |
 |---|-------------|-------|----------|
-| — | — | — | — |
+| TD-101 | Флаг `clarify` живёт только в памяти хаба (`pending`): если хаб перезапустится, пока задача ещё в `queued`, она начнётся без фазы плана. Нужна колонка в `tasks` (новая миграция) | 2 | Low |

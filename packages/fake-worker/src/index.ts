@@ -23,6 +23,12 @@ export const SCENARIOS = [
   "expensive",
   "crash",
   "hang",
+  "ask",
+  "ask-twice",
+  "clarify",
+  "clarify-edit",
+  "text-question",
+  "foreign-dialog",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -41,6 +47,10 @@ let lastText: string | null = null;
 let running = false;
 let aborted = false;
 let resumedFrom: string | null = null;
+let turn = 0;
+let lastPrompt = "";
+let dialogSeq = 0;
+const dialogs = new Map<string, (value: string | undefined) => void>();
 
 function out(record: unknown): void {
   process.stdout.write(`${JSON.stringify(record)}\n`);
@@ -88,6 +98,37 @@ function writeHello(): void {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The `ask` tool of the pi-hub extension as Pi RPC shows it: tool start, dialog, tool end. */
+async function ask(question: string, options?: string[]): Promise<string | undefined> {
+  const id = `dlg-${++dialogSeq}`;
+  const callId = `ask-${dialogSeq}`;
+  out({ type: "tool_execution_start", toolCallId: callId, toolName: "ask", args: { question } });
+  const payload = JSON.stringify(options ? { question, options } : { question });
+  const answer = new Promise<string | undefined>((resolve) => dialogs.set(id, resolve));
+  out({
+    type: "extension_ui_request",
+    id,
+    method: "input",
+    title: `pi-hub:ask ${payload}`,
+    placeholder: "answer",
+  });
+  const value = await answer;
+  out({
+    type: "tool_execution_end",
+    toolCallId: callId,
+    toolName: "ask",
+    isError: false,
+    result: { content: [{ type: "text", text: value ? `Answer: ${value}` : "No answer" }] },
+  });
+  return value;
+}
+
+function commitFile(name: string, content: string, message: string): void {
+  writeFileSync(join(process.cwd(), name), content);
+  git(["add", "-A"]);
+  git(["commit", "-q", "-m", message]);
+}
+
 function settle(): void {
   running = false;
   out({ type: "agent_end", messages: [], willRetry: false });
@@ -97,10 +138,57 @@ function settle(): void {
 async function runScenario(): Promise<void> {
   running = true;
   aborted = false;
+  turn++;
   out({ type: "agent_start" });
   out({ type: "turn_start" });
   await sleep(10);
   switch (scenario) {
+    case "ask": {
+      const a = await ask("Which storage should sessions use?", ["A: Redis", "B: database table"]);
+      if (aborted) return;
+      commitFile("answer.txt", `${a ?? "none"}\n`, "Add answer.txt");
+      assistant(`Done.\n\nSUMMARY:\n- Stored the answer: ${a ?? "none"}.`, 0.001);
+      break;
+    }
+    case "ask-twice": {
+      const a = await ask("First question?");
+      if (aborted) return;
+      const b = await ask("Second question?", ["yes", "no"]);
+      if (aborted) return;
+      commitFile("answer.txt", `${a}\n${b}\n`, "Add answer.txt");
+      assistant(`Done.\n\nSUMMARY:\n- Answers: ${a}, ${b}.`, 0.001);
+      break;
+    }
+    case "clarify":
+    case "clarify-edit": {
+      if (!lastPrompt.startsWith("PLAN PHASE")) {
+        assistant("Not in plan phase.\n\nSUMMARY:\n- Nothing.", 0.001);
+        break;
+      }
+      if (scenario === "clarify-edit") writeFileSync(join(process.cwd(), "draft.txt"), "draft\n");
+      const a = await ask("Plan:\n1. Create hello.txt\n2. Commit\nQuestions: which greeting?");
+      if (aborted) return;
+      commitFile("hello.txt", `${a}\n`, "Add hello.txt");
+      assistant(`Done.\n\nSUMMARY:\n- Added hello.txt with: ${a}.`, 0.001);
+      break;
+    }
+    case "foreign-dialog": {
+      const id = `dlg-${++dialogSeq}`;
+      const reply = new Promise<string | undefined>((resolve) => dialogs.set(id, resolve));
+      out({ type: "extension_ui_request", id, method: "confirm", title: "Allow?", message: "x" });
+      const v = await reply;
+      commitFile("dialog.txt", `${v === undefined ? "refused" : v}\n`, "Add dialog.txt");
+      assistant("Done.\n\nSUMMARY:\n- Dialog handled.", 0.001);
+      break;
+    }
+    case "text-question":
+      if (turn === 1) {
+        assistant("I looked at the repo.\n\nShould the file be named a.txt or b.txt?", 0.001);
+        break;
+      }
+      commitFile("named.txt", `${lastPrompt}\n`, "Add named.txt");
+      assistant(`Done.\n\nSUMMARY:\n- Created the file after the answer: ${lastPrompt}.`, 0.001);
+      break;
     case "crash":
       process.stderr.write("fake worker: simulated crash\n");
       process.exit(1);
@@ -179,6 +267,7 @@ async function handle(cmd: { id?: string; type?: string; [k: string]: unknown })
       respond(id, type, { models: SCENARIOS.map((s) => ({ id: s, provider: "fake" })) });
       return;
     case "prompt":
+      lastPrompt = String(cmd.message ?? "");
       respond(id, type, { disposition: "started" });
       void runScenario();
       return;
@@ -194,9 +283,18 @@ async function handle(cmd: { id?: string; type?: string; [k: string]: unknown })
       return;
     case "abort":
       aborted = true;
+      for (const resolve of dialogs.values()) resolve(undefined);
+      dialogs.clear();
       if (running) settle();
       respond(id, type);
       return;
+    case "extension_ui_response": {
+      // no command response, like Pi
+      const resolve = dialogs.get(String(id));
+      dialogs.delete(String(id));
+      resolve?.(cmd.cancelled ? undefined : String(cmd.value ?? ""));
+      return;
+    }
     case "switch_session":
       resumedFrom = String(cmd.sessionPath ?? "");
       respond(id, type, { cancelled: false });

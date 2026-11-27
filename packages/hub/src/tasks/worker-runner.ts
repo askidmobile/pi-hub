@@ -7,13 +7,26 @@ import { loadProjectConfig } from "../config/load.js";
 import type { HubPaths } from "../config/paths.js";
 import type { HubConfig } from "../config/schema.js";
 import { createMasker, maskDeep } from "../log.js";
+import type { ExtensionUiRequest } from "../pi-rpc/events.js";
 import { allowlistedEnv, buildWorkerLaunch } from "../pi-rpc/launcher.js";
 import { PiExitedError, PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
 import { parseModelRef } from "../router/model-resolver.js";
-import { parseJsonList, type Repos, type TaskPatch, type TaskRow } from "../storage/repos.js";
+import {
+  parseJsonList,
+  type QuestionRow,
+  type Repos,
+  type TaskPatch,
+  type TaskRow,
+} from "../storage/repos.js";
 import type { WorkspaceManager } from "../workspaces/workspace-manager.js";
 import { ensureSummary, finalizeWorkspace } from "./finalize.js";
-import { writeWorkerPrompt } from "./prompt.js";
+import { planPhaseMessage, writeWorkerPrompt } from "./prompt.js";
+import {
+  answerAsMessage,
+  DIALOG_METHODS,
+  detectTextQuestion,
+  parseAskDialog,
+} from "./questions.js";
 
 export const REPORT_ASSUMPTION_TOOL = "report_assumption";
 
@@ -31,12 +44,17 @@ export interface RunnerDeps {
   transition: (taskId: string, to: TaskStatus, patch?: TaskPatch) => boolean;
 }
 
-export type RunMode = { kind: "fresh" } | { kind: "continue"; message: string };
+export type RunMode = { kind: "fresh"; clarify?: boolean } | { kind: "continue"; message: string };
 
 /**
  * One run of one task (spec FR-010..FR-027): worktree -> setup -> Pi -> events (log,
  * steps, limits, assumptions) -> agent_settled -> finalize -> done. A run never throws;
  * every failure ends in `failed` with a reason unless the task was cancelled or interrupted.
+ *
+ * Stage 2 (plan PD-103): the Pi process lives while the task waits for an answer. A question
+ * from `ask` keeps its dialog open and is answered with `extension_ui_response`; a plan
+ * without `ask` and a question in the final text (FR-120) are answered with a new `prompt`
+ * in the same process. The time limit, if set, does not count time in `needs_input`.
  */
 export class WorkerRun {
   private client: PiRpcClient | undefined;
@@ -46,6 +64,16 @@ export class WorkerRun {
   private interrupted = false;
   private timer: NodeJS.Timeout | undefined;
   private killTimer: NodeJS.Timeout | undefined;
+  private timeLimitMs: number | undefined;
+  private timeUsedMs = 0;
+  private timeSegmentStart: number | undefined;
+  private worktree: { path: string; baseCommit: string } | undefined;
+  /** Pi dialog id of the open `ask`, answered with `extension_ui_response`. */
+  private dialogId: string | undefined;
+  /** Waiting for an answer that goes to the worker as a new prompt. */
+  private pendingAnswer: ((message: string | null) => void) | undefined;
+  private exitWhileWaiting: PiExitedError | undefined;
+  private isWaiting = false;
   private readonly assumptions: string[];
   readonly done: Promise<void>;
   private readonly log: Logger;
@@ -64,9 +92,42 @@ export class WorkerRun {
     return this.deps.timing?.stopGraceMs ?? 10_000;
   }
 
+  /** True while the task is in `needs_input`: such a run does not hold a worker slot (PD-101). */
+  get waiting(): boolean {
+    return this.isWaiting;
+  }
+
+  /** Whether `answer()` can deliver to the live worker. */
+  get canAnswer(): boolean {
+    return this.isWaiting && (this.dialogId !== undefined || this.pendingAnswer !== undefined);
+  }
+
+  /**
+   * Delivers the architect's answer to the open question (FR-104): as the result of `ask`,
+   * or as a new prompt. The question is closed and the task returns to its status.
+   */
+  answer(question: QuestionRow, text: string): void {
+    if (!this.canAnswer) throw new Error(`task ${this.task.id} is not waiting for an answer`);
+    this.deps.repos.answerQuestion(question.id, text, "senior");
+    this.isWaiting = false;
+    this.deps.transition(this.task.id, question.resume_status ?? "running");
+    this.log.info({ question_id: question.id }, "question answered");
+    if (this.dialogId !== undefined && question.pi_dialog_id === this.dialogId) {
+      const id = this.dialogId;
+      this.dialogId = undefined;
+      this.resumeTimer();
+      this.client?.respondUi(id, text);
+      return;
+    }
+    const resolve = this.pendingAnswer;
+    this.pendingAnswer = undefined;
+    resolve?.(answerAsMessage(question, text));
+  }
+
   /** Stop for `cancel` (status already set by the service). Resolves when the process is gone. */
   async cancel(): Promise<void> {
     this.cancelled = true;
+    this.releaseWait();
     await this.stopProcess();
     await this.done;
   }
@@ -74,8 +135,34 @@ export class WorkerRun {
   /** Stop for hub shutdown: the task becomes `interrupted` and can continue later. */
   async interrupt(): Promise<void> {
     this.interrupted = true;
+    this.releaseWait();
     await this.stopProcess();
     await this.done;
+  }
+
+  private releaseWait(): void {
+    const resolve = this.pendingAnswer;
+    this.pendingAnswer = undefined;
+    resolve?.(null);
+  }
+
+  // --- time limit (FR-118): counts only time outside needs_input ---
+
+  private resumeTimer(): void {
+    if (this.timeLimitMs === undefined || this.timeSegmentStart !== undefined) return;
+    const limit = this.timeLimitMs;
+    this.timeSegmentStart = Date.now();
+    this.timer = setTimeout(
+      () => this.stopFor(`превышено время задачи (${Math.round(limit / 60_000)} мин)`),
+      Math.max(0, limit - this.timeUsedMs),
+    );
+  }
+
+  private pauseTimer(): void {
+    if (this.timeSegmentStart === undefined) return;
+    this.timeUsedMs += Date.now() - this.timeSegmentStart;
+    this.timeSegmentStart = undefined;
+    clearTimeout(this.timer);
   }
 
   private async stopProcess(): Promise<void> {
@@ -102,6 +189,8 @@ export class WorkerRun {
   private fail(reason: string): void {
     if (this.cancelled || this.interrupted) return;
     this.log.error({ reason }, "task failed");
+    const open = this.deps.repos.openQuestion(this.task.id);
+    if (open) this.deps.repos.closeQuestion(open.id);
     this.deps.transition(this.task.id, "failed", {
       failure_reason: reason,
       finished_at: new Date().toISOString(),
@@ -110,6 +199,106 @@ export class WorkerRun {
 
   private writeLog(record: unknown, mask: (s: string) => string): void {
     this.logStream?.write(`${JSON.stringify(maskDeep(record, mask))}\n`);
+  }
+
+  // --- questions ---
+
+  /** Extension UI request from Pi: the pi-hub `ask` becomes a question, other dialogs are refused. */
+  private onUiRequest(req: ExtensionUiRequest): void {
+    if (!DIALOG_METHODS.has(req.method)) return; // notify, setStatus, ...: nothing to answer
+    const ask = parseAskDialog(req);
+    if (!ask) {
+      this.log.warn({ method: req.method, title: req.title }, "foreign extension dialog refused");
+      this.refuse(req.id);
+      return;
+    }
+    void this.onAsk(req.id, ask.question, ask.options).catch((e: Error) => {
+      this.log.error({ err: e.message }, "ask handling failed");
+      this.refuse(req.id);
+    });
+  }
+
+  private refuse(dialogId: string): void {
+    try {
+      this.client?.respondUi(dialogId, null);
+    } catch {
+      // the process is gone
+    }
+  }
+
+  private async onAsk(dialogId: string, text: string, options?: string[]): Promise<void> {
+    const { repos } = this.deps;
+    const status = repos.getTask(this.task.id)?.status;
+    // One question at a time (FR-115); a question outside planning/running has nowhere to go.
+    if (
+      (status !== "running" && status !== "planning") ||
+      this.dialogId !== undefined ||
+      this.pendingAnswer !== undefined ||
+      repos.openQuestion(this.task.id)
+    ) {
+      this.log.warn({ status }, "ask refused: not accepting a question now");
+      this.refuse(dialogId);
+      return;
+    }
+    this.dialogId = dialogId;
+    const kind = status === "planning" ? "plan" : "question";
+    const question = kind === "plan" ? await this.withPlanWarning(text) : text;
+    if (this.cancelled || this.interrupted || this.stopReason) {
+      this.dialogId = undefined;
+      this.refuse(dialogId);
+      return;
+    }
+    this.raise(kind, question, options, dialogId);
+  }
+
+  /** Records the question and moves the task to `needs_input` (FR-102). */
+  private raise(
+    kind: "plan" | "question" | "text",
+    text: string,
+    options: string[] | undefined,
+    dialogId: string | null,
+  ): void {
+    const q = this.deps.repos.insertQuestion({
+      task_id: this.task.id,
+      kind,
+      text,
+      options,
+      pi_dialog_id: dialogId,
+      // The plan's answer starts the implementation (D-108).
+      resume_status: "running",
+    });
+    this.pauseTimer();
+    this.isWaiting = true;
+    this.log.info({ question_id: q.id, kind }, "worker asked a question");
+    if (!this.deps.transition(this.task.id, "needs_input")) {
+      this.isWaiting = false;
+      this.dialogId = undefined;
+      this.deps.repos.closeQuestion(q.id);
+      if (dialogId) this.refuse(dialogId);
+      this.resumeTimer();
+    }
+  }
+
+  /** A question answered with a new prompt; resolves to that prompt, or null when stopped. */
+  private waitForPromptAnswer(kind: "plan" | "text", text: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.pendingAnswer = resolve;
+      this.raise(kind, text, undefined, null);
+      if (!this.isWaiting) {
+        this.pendingAnswer = undefined;
+        resolve(null);
+      }
+    });
+  }
+
+  /** Files changed during the plan phase are reported with the plan (FR-125). */
+  private async withPlanWarning(text: string): Promise<string> {
+    const wt = this.worktree;
+    if (!wt) return text;
+    const files = await this.deps.wm.touchedFiles(wt.path, wt.baseCommit).catch(() => []);
+    if (!files.length) return text;
+    const list = files.slice(0, 10).join(", ") + (files.length > 10 ? ", …" : "");
+    return `${text}\n\n⚠ в фазе плана изменены файлы: ${list}`;
   }
 
   private async run(): Promise<void> {
@@ -134,6 +323,7 @@ export class WorkerRun {
         log_path: logPath,
       });
       this.logStream = createWriteStream(logPath, { flags: "a" });
+      this.worktree = { path: ws.path, baseCommit };
 
       const resuming = this.mode.kind === "continue" && !!task.pi_session_path;
       const projectCfg = loadProjectConfig(project.repo_root);
@@ -192,7 +382,14 @@ export class WorkerRun {
             this.assumptions.push(text.trim());
             this.patch({ assumptions_json: JSON.stringify(this.assumptions) });
           }
+        } else if (e.kind === "ui_request") {
+          this.onUiRequest(e.record);
         }
+      });
+      client.on("exit", (err) => {
+        if (!this.pendingAnswer) return;
+        this.exitWhileWaiting = err;
+        this.releaseWait();
       });
       client.start();
       if (client.pid) this.patch({ pid: client.pid });
@@ -200,27 +397,46 @@ export class WorkerRun {
       if (resuming && task.pi_session_path) await client.switchSession(task.pi_session_path);
       else if (state.sessionFile) this.patch({ pi_session_path: state.sessionFile });
 
-      const message =
+      let message: string =
         this.mode.kind === "fresh"
-          ? task.task_text
+          ? this.mode.clarify
+            ? planPhaseMessage(task.task_text)
+            : task.task_text
           : resuming
             ? this.mode.message
             : `${task.task_text}\n\n${this.mode.message}`;
-      const settled = client.waitSettled();
-      await client.prompt(message);
       const maxMinutes = deps.config.limits.max_task_minutes;
-      const timeLimit = deps.timing?.timeLimitMs ?? (maxMinutes ? maxMinutes * 60_000 : undefined);
-      if (timeLimit !== undefined) {
-        this.timer = setTimeout(
-          () => this.stopFor(`превышено время задачи (${Math.round(timeLimit / 60_000)} мин)`),
-          timeLimit,
-        );
+      this.timeLimitMs = deps.timing?.timeLimitMs ?? (maxMinutes ? maxMinutes * 60_000 : undefined);
+
+      // Turns until the worker finishes without a question (plan without ask, FR-120).
+      for (;;) {
+        const settled = client.waitSettled();
+        await client.prompt(message);
+        this.resumeTimer();
+        const res = await settled;
+        this.pauseTimer();
+        if (this.cancelled || this.interrupted) return;
+        if (this.stopReason) return this.fail(this.stopReason);
+        if (res.aborted) return this.fail("воркер прервал работу");
+
+        const text = await client.getLastAssistantText();
+        const status = deps.repos.getTask(task.id)?.status;
+        let question: { kind: "plan" | "text"; text: string } | undefined;
+        if (status === "planning") {
+          const plan = text?.trim() || "(воркер закончил фазу плана без текста)";
+          question = { kind: "plan", text: await this.withPlanWarning(plan) };
+        } else {
+          const tq = detectTextQuestion(text);
+          if (tq) question = { kind: "text", text: tq };
+        }
+        if (!question) break;
+        const answer = await this.waitForPromptAnswer(question.kind, question.text);
+        if (answer === null) {
+          if (this.cancelled || this.interrupted) return;
+          throw this.exitWhileWaiting ?? new Error("ожидание ответа прервано");
+        }
+        message = answer;
       }
-      const res = await settled;
-      clearTimeout(this.timer);
-      if (this.cancelled || this.interrupted) return;
-      if (this.stopReason) return this.fail(this.stopReason);
-      if (res.aborted) return this.fail("воркер прервал работу");
 
       deps.transition(task.id, "checking");
       const finalText = await ensureSummary(client, deps.timing?.summaryTimeoutMs ?? 120_000);
@@ -247,6 +463,7 @@ export class WorkerRun {
       const err = e as Error;
       this.fail(err instanceof PiExitedError ? `воркер завершился: ${err.message}` : err.message);
     } finally {
+      this.pauseTimer();
       clearTimeout(this.timer);
       clearTimeout(this.killTimer);
       if (this.client && !this.client.hasExited)

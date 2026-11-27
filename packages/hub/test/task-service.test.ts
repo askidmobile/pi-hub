@@ -1,99 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Accounting } from "../src/accounting/accounting.js";
-import { defaultExtensionPath } from "../src/assets.js";
-import { resolveHubPaths } from "../src/config/paths.js";
-import { HubConfig } from "../src/config/schema.js";
 import { HubError } from "../src/errors.js";
-import { createLogger } from "../src/log.js";
-import { SessionRegistry } from "../src/sessions/session-registry.js";
-import { migrate, openDatabase } from "../src/storage/db.js";
-import { Repos } from "../src/storage/repos.js";
 import { extractSummary, hasSummaryBlock, looksIncomplete } from "../src/tasks/finalize.js";
-import { TaskService } from "../src/tasks/task-service.js";
-import { GitLock } from "../src/workspaces/git.js";
-import { WorkspaceManager } from "../src/workspaces/workspace-manager.js";
-import { FAKE_WORKER, initRepo, tempDir } from "./helpers.js";
-
-const git = (cwd: string, ...args: string[]) =>
-  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
-
-interface Harness {
-  service: TaskService;
-  repos: Repos;
-  sessions: SessionRegistry;
-  sessionId: string;
-  repo: string;
-  home: string;
-}
-
-function makeHarness(
-  root: string,
-  opts: {
-    maxWorkers?: number;
-    maxUsd?: number;
-    timeLimitMs?: number;
-    repo?: string;
-    dbFile?: string;
-  } = {},
-): Harness {
-  const home = join(root, "h");
-  const repo = opts.repo ?? join(root, "repo");
-  if (!existsSync(repo)) {
-    mkdirSync(repo, { recursive: true });
-    initRepo(repo);
-  }
-  const paths = resolveHubPaths({ PI_HUB_HOME: home });
-  const config = HubConfig.parse({
-    allowed_repos: [git(repo, "rev-parse", "--show-toplevel")],
-    roles: { code: { model: "fake/success" } },
-    default_role: "code",
-    limits: { max_workers_hub: opts.maxWorkers ?? 2, max_task_usd: opts.maxUsd ?? 2 },
-  });
-  const db = openDatabase(opts.dbFile ?? join(home, "hub.db"));
-  migrate(db);
-  const repos = new Repos(db);
-  const logger = createLogger({ file: paths.hubLog, level: "debug" });
-  const service = new TaskService({
-    repos,
-    config,
-    paths,
-    secrets: {},
-    wm: new WorkspaceManager(paths.worktreesDir, new GitLock()),
-    accounting: new Accounting(repos),
-    logger,
-    pi: { bin: process.execPath, binArgs: [FAKE_WORKER], extensionPath: defaultExtensionPath() },
-    timing: {
-      timeLimitMs: opts.timeLimitMs ?? 20_000,
-      summaryTimeoutMs: 5_000,
-      stopGraceMs: 1_000,
-    },
-  });
-  const sessions = new SessionRegistry(repos, config);
-  return { service, repos, sessions, sessionId: "", repo, home };
-}
-
-async function connect(h: Harness, mode: "on" | "off" = "on"): Promise<string> {
-  const { session } = await h.sessions.connect({
-    client: "claude-code",
-    parent_pid: process.pid,
-    cwd: h.repo,
-  });
-  h.sessions.setMode(session.id, mode);
-  h.sessionId = session.id;
-  return session.id;
-}
-
-const start = (h: Harness, model = "fake/success", extra: Record<string, string> = {}) =>
-  h.service.start(h.sessionId, {
-    task: "Create hello.txt",
-    model,
-    repo: h.repo,
-    base_branch: "main",
-    ...extra,
-  });
+import { initRepo, tempDir } from "./helpers.js";
+import { connect, git, type Harness, makeHarness, start } from "./task-harness.js";
 
 describe("TaskService (fake worker)", () => {
   let dir: ReturnType<typeof tempDir>;
@@ -267,10 +178,12 @@ describe("TaskService (fake worker)", () => {
     );
   });
 
-  it("send is refused for tasks that are not interrupted or failed", async () => {
-    const s = await start(h);
-    await h.service.waitFor(h.sessionId, s.task_id, 15_000);
-    expect(() => h.service.send(h.sessionId, s.task_id, "more")).toThrow(/interrupted или failed/);
+  it("send is refused for a task that is still working", async () => {
+    const s = await start(h, "fake/hang");
+    await expect(h.service.send(h.sessionId, s.task_id, "more")).rejects.toThrow(
+      /send принимает задачи needs_input, done, failed или interrupted; статус running/,
+    );
+    await h.service.cancel(h.sessionId, s.task_id);
   });
 });
 
@@ -301,7 +214,7 @@ describe("TaskService restart and continue (scenario 4)", () => {
     expect(b.repos.getTask(s.task_id)?.status).toBe("interrupted");
     // continue with a scenario that finishes: switch the model to fake/success for the retry
     b.repos.updateTask(s.task_id, { model: "fake/success" });
-    expect(b.service.send(a.sessionId, s.task_id, "continue").status).toBe("running");
+    expect((await b.service.send(a.sessionId, s.task_id, "continue")).status).toBe("running");
     const w = await b.service.waitFor(a.sessionId, s.task_id, 15_000);
     expect(w.status).toBe("done");
     expect(w.summary).toContain("Added hello.txt");

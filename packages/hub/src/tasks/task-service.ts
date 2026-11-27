@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  type OpenQuestion,
   type ResultEnvelope,
   type TaskStatus,
   type TaskSummaryRow,
@@ -13,6 +14,7 @@ import { ModelSelectionError, resolveModel } from "../router/model-resolver.js";
 import type { TaskPatch, TaskRow } from "../storage/repos.js";
 import { gitTopLevel } from "../workspaces/repo.js";
 import { buildEnvelope, costLine, summaryRow } from "./envelope.js";
+import { answerAsMessage, toOpenQuestion } from "./questions.js";
 import { type RunMode, type RunnerDeps, WorkerRun } from "./worker-runner.js";
 
 /** Statuses in which a task is still moving on its own. */
@@ -29,6 +31,8 @@ export interface StartInput {
   model?: string | undefined;
   repo: string;
   base_branch: string;
+  /** Plan first: the task starts in `planning` and asks with its plan (FR-125). */
+  clarify?: boolean | undefined;
 }
 
 export interface StartResult {
@@ -45,7 +49,19 @@ export interface WaitResult {
   summary?: string;
   cost_line?: string;
   failure_reason?: string;
+  /** The open question while the task is in `needs_input` (FR-103). */
+  question?: OpenQuestion;
 }
+
+export interface SendResult {
+  task_id: string;
+  status: TaskStatus;
+  warnings?: string[];
+}
+
+/** Statuses `send` accepts (stage 2 FR-104..FR-106). */
+const SENDABLE: ReadonlySet<TaskStatus> = new Set(["needs_input", "done", "failed", "interrupted"]);
+export const MERGED_BRANCH_WARNING = "ветка уже слита: новые коммиты нужно слить заново";
 
 export type TaskServiceDeps = Omit<RunnerDeps, "transition">;
 
@@ -81,6 +97,8 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     }
     this.deps.repos.updateTask(taskId, { ...patch, status: to });
     this.emit("changed", taskId, to);
+    // A task waiting for an answer frees its slot (plan PD-101).
+    if (to === "needs_input") setImmediate(() => this.pump());
     return true;
   }
 
@@ -138,7 +156,7 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       { task_id: task.id, senior_session_id: sessionId, model: choice.ref },
       "task created",
     );
-    this.pending.set(task.id, { kind: "fresh" });
+    this.pending.set(task.id, { kind: "fresh", clarify: input.clarify === true });
     this.pump();
     const status = this.deps.repos.getTask(task.id)?.status ?? "queued";
     return { task_id: task.id, status, model: choice.ref, route_reason: choice.reason, warnings };
@@ -196,6 +214,10 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       );
     }
     if (task.failure_reason) out.failure_reason = task.failure_reason;
+    if (task.status === "needs_input") {
+      const q = this.deps.repos.openQuestion(task.id);
+      if (q) out.question = toOpenQuestion(q);
+    }
     return out;
   }
 
@@ -210,52 +232,89 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     }
     this.pending.delete(taskId);
     this.transition(taskId, "cancelled", { finished_at: new Date().toISOString() });
+    const open = this.deps.repos.openQuestion(taskId);
+    if (open) this.deps.repos.closeQuestion(open.id);
     const run = this.runs.get(taskId);
     if (run) await run.cancel();
     return { task_id: taskId, status: "cancelled" };
   }
 
-  /** Stage 1: continue an `interrupted` or `failed` task in the same Pi session (D-007). */
-  send(
-    sessionId: string,
-    taskId: string,
-    message: string,
-  ): { task_id: string; status: TaskStatus } {
+  /**
+   * `send` (stage 2 FR-104..FR-106, FR-123; stage 1 D-007):
+   * - `needs_input` with a live worker: the answer to the open question;
+   * - `done`: rework in the same Pi session and branch, with a warning if already merged;
+   * - `interrupted` / `failed`: continue the same Pi session; an open question left by a hub
+   *   restart is answered and passed to the worker as text.
+   */
+  async send(sessionId: string, taskId: string, message: string): Promise<SendResult> {
     const task = this.owned(sessionId, taskId);
-    if (task.status !== "interrupted" && task.status !== "failed") {
+    const { repos } = this.deps;
+    const run = this.runs.get(taskId);
+    const open = repos.openQuestion(taskId);
+    if (task.status === "needs_input" && run?.canAnswer && open) {
+      run.answer(open, message);
+      return { task_id: taskId, status: repos.getTask(taskId)?.status ?? task.status };
+    }
+    if (!SENDABLE.has(task.status)) {
       throw new HubError(
         "bad_state",
-        `send на этапе 1 продолжает только задачи interrupted или failed; статус ${task.status}`,
+        `send принимает задачи needs_input, done, failed или interrupted; статус ${task.status}`,
       );
     }
+    if (run && task.status === "needs_input") {
+      throw new HubError("bad_state", "воркер ещё не готов принять ответ, повторите send");
+    }
+    // done / failed / interrupted: the run may still be stopping Pi.
+    if (run) await run.done;
     if (this.runs.has(taskId)) throw new HubError("bad_state", "задача ещё выполняется");
-    this.deps.repos.updateTask(taskId, {
-      attempt: task.attempt + 1,
-      failure_reason: null,
-      finished_at: null,
-    });
-    this.pending.set(taskId, { kind: "continue", message });
+    const warnings: string[] = [];
+    let text = message;
+    if (open) {
+      repos.answerQuestion(open.id, message, "senior");
+      text = answerAsMessage(open, message);
+    }
+    const patch: TaskPatch = { attempt: task.attempt + 1, failure_reason: null, finished_at: null };
+    if (task.status === "done") {
+      if (await this.isMerged(task)) warnings.push(MERGED_BRANCH_WARNING);
+      // A new finalization computes the warnings again.
+      patch.warnings_json = JSON.stringify(warnings);
+    }
+    repos.updateTask(taskId, patch);
+    this.pending.set(taskId, { kind: "continue", message: text });
     this.launch(taskId);
-    return { task_id: taskId, status: this.deps.repos.getTask(taskId)?.status ?? task.status };
+    const status = repos.getTask(taskId)?.status ?? task.status;
+    return { task_id: taskId, status, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  private async isMerged(task: TaskRow): Promise<boolean> {
+    const project = this.deps.repos.getProject(task.project_id);
+    if (!project || !task.branch || !task.base_branch || !task.base_commit) return false;
+    return this.deps.wm
+      .isMergedInto(project.repo_root, task.branch, task.base_branch, task.base_commit)
+      .catch(() => false);
   }
 
   // --- scheduling ---
 
-  /** Starts queued tasks while slots are free, oldest first (FR-020). */
+  /**
+   * Starts queued tasks while slots are free, oldest first (FR-020). A task waiting for an
+   * answer does not hold a slot (plan PD-101).
+   */
   pump(): void {
     if (this.closed) return;
     const limit = this.deps.config.limits.max_workers_hub;
     for (const t of this.deps.repos.listTasksByStatus(["queued"])) {
-      if (this.runs.size >= limit) return;
+      if (this.runningCount >= limit) return;
       this.launch(t.id);
     }
   }
 
   private launch(taskId: string): void {
     if (this.runs.has(taskId) || this.closed) return;
-    const mode = this.pending.get(taskId) ?? { kind: "fresh" as const };
+    const mode: RunMode = this.pending.get(taskId) ?? { kind: "fresh" };
     this.pending.delete(taskId);
-    if (!this.transition(taskId, "running", { started_at: new Date().toISOString() })) return;
+    const first = mode.kind === "fresh" && mode.clarify ? "planning" : "running";
+    if (!this.transition(taskId, first, { started_at: new Date().toISOString() })) return;
     const task = this.deps.repos.getTask(taskId) as TaskRow;
     const run = new WorkerRun(
       { ...this.deps, transition: (id, to, p) => this.transition(id, to, p) },
@@ -269,20 +328,28 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     });
   }
 
+  /** Workers holding a slot: live runs that are not waiting for an answer. */
   get runningCount(): number {
-    return this.runs.size;
+    let n = 0;
+    for (const r of this.runs.values()) if (!r.waiting) n++;
+    return n;
   }
 
   // --- lifecycle ---
 
   /**
    * On daemon start (FR-022): tasks left running by a dead hub become `interrupted`;
-   * queued tasks are scheduled. Stored PIDs are never signalled: Pi exits when the hub's
+   * queued tasks are scheduled. An open question stays open (stage 2 FR-106). Stored PIDs are never signalled: Pi exits when the hub's
    * stdin pipe closes, and after a reboot the PID may belong to an unrelated process.
    */
   recover(): { interrupted: string[] } {
     const interrupted: string[] = [];
-    for (const t of this.deps.repos.listTasksByStatus(["running", "planning", "checking"])) {
+    for (const t of this.deps.repos.listTasksByStatus([
+      "running",
+      "planning",
+      "checking",
+      "needs_input",
+    ])) {
       if (this.runs.has(t.id)) continue;
       if (t.pid && pidAlive(t.pid)) {
         this.deps.logger.warn(

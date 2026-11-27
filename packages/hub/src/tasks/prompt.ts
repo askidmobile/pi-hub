@@ -32,3 +32,21 @@ export function writeWorkerPrompt(
   writeFileSync(file, text);
   return file;
 }
+
+/**
+ * First message of a `clarify` task (stage 2 FR-125, D-108). It lives in the user message,
+ * not in the system prompt, because the same Pi session continues into the implementation
+ * after the architect answers.
+ */
+export function planPhaseMessage(taskText: string): string {
+  return [
+    "PLAN PHASE. Before changing anything, study the code and plan the task below.",
+    "Do not create, edit, delete or commit any files in this phase.",
+    "Finish the phase with exactly one `ask` call whose question contains your plan",
+    "(short numbered steps, files to change) and your open questions.",
+    "After you get the answer, implement the task following the plan and the answer.",
+    "",
+    "TASK:",
+    taskText,
+  ].join("\n");
+}
