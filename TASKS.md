@@ -20,7 +20,7 @@
 | T-006 | 2026-11-27 | TD-001: типизировать тесты (tsconfig.test.json, шаг в typecheck/CI) | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
 | T-007 | 2026-11-27 | TD-005: проверить автоподключение плагина через claude plugin в init | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
 | T-011 | 2026-11-27 | Спека этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/specs/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
-| T-012 | 2026-11-27 | Реализация этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | 🔄 Фазы 0–6 из 6, ждёт ретроспективы |
+| T-012 | 2026-11-27 | Реализация этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
 
 ## 📦 Backlog
 
@@ -29,3 +29,6 @@
 | T-008 | 2026-11-27 | TD-002: очистить таймер ensureSummary в finally | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | Low |
 | T-009 | 2026-11-27 | TD-003: убрать as never в регистрации инструментов фасада | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | Low |
 | T-010 | 2026-11-27 | TD-004: сокет без окна до chmod 0600 (каталог 0700 или umask) | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | Low |
+| T-013 | 2026-11-27 | TD-101: флаг clarify хранить в tasks (переживает рестарт хаба в queued) | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | Low |
+| T-014 | 2026-11-27 | TD-102: кэш проверки базы привязать к тексту команды, а не к имени | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | Low |
+| T-015 | 2026-11-27 | TD-103: cancel останавливает запущенную команду проверки качества | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | Low |
