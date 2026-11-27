@@ -22,7 +22,7 @@
 | T-011 | 2026-11-27 | Спека этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/specs/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
 | T-012 | 2026-11-27 | Реализация этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
 | T-016 | 2026-11-27 | Спека этапа 3: роутинг, эскалация, Codex, usage_report | [`2026-11-27-stage-3-routing-codex.md`](docs/specs/2026-11-27-stage-3-routing-codex.md) | ✅ Done |
-| T-017 | 2026-11-27 | Реализация этапа 3: роутинг, эскалация, Codex, usage_report | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | 🔄 Фазы 7 из 7, ждёт ревью |
+| T-017 | 2026-11-27 | Реализация этапа 3: роутинг, эскалация, Codex, usage_report | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | ✅ Done (ретроспектива в плане) |
 
 ## 📦 Backlog
 
@@ -34,3 +34,7 @@
 | T-013 | 2026-11-27 | TD-101: флаг clarify хранить в tasks (переживает рестарт хаба в queued) | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | Low |
 | T-014 | 2026-11-27 | TD-102: кэш проверки базы привязать к тексту команды, а не к имени | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | Low |
 | T-015 | 2026-11-27 | TD-103: cancel останавливает запущенную команду проверки качества | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | Low |
+| T-018 | 2026-11-27 | TD-203: ждать итог, пока агент работает (не 2 мин) | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | Medium |
+| T-019 | 2026-11-27 | TD-202: срок ожидания соединений при остановке демона | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | Medium |
+| T-020 | 2026-11-27 | CI: обновить actions/checkout, setup-node, pnpm/action-setup (Node 20 устарел) | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | Low |
+| T-021 | 2026-11-27 | Эталоны сложнее и прогон с эскалацией: проверить цепочку ролей | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | Medium |

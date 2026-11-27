@@ -1,7 +1,7 @@
 # Plan: Этап 3 — роутинг, эскалация, Codex и отчёт о расходах
 
 **Date:** 2026-11-27
-**Status:** 🔄 Implementing
+**Status:** ✅ Implemented
 **Priority:** P1
 **Specification:** [docs/specs/2026-11-27-stage-3-routing-codex.md](../specs/2026-11-27-stage-3-routing-codex.md)
 
@@ -53,32 +53,32 @@ graph TD
 
 ### Protocol (`packages/protocol/src`)
 
-- [ ] `tools.ts` — `usage_report` в `DELEGATION_TOOLS` и `TOOL_DESCRIPTIONS` (одна фраза).
-- [ ] `envelope.ts` — `ResultEnvelope.models: string[]` (модели задачи по порядку); тип `UsageReport` (итог, `by_model[]`, `by_role[]`, `more?`).
-- [ ] `version.ts` — без изменений: новый MCP-инструмент не меняет протокол shim ↔ хаб (spec §6).
+- [x] `tools.ts` — `usage_report` в `DELEGATION_TOOLS` и `TOOL_DESCRIPTIONS` (одна фраза).
+- [x] `envelope.ts` — `ResultEnvelope.models: string[]` (модели задачи по порядку); тип `UsageReport` (итог, `by_model[]`, `by_role[]`, `more?`).
+- [x] `version.ts` — без изменений: новый MCP-инструмент не меняет протокол shim ↔ хаб (spec §6).
 
 ### Hub (`packages/hub/src`)
 
 #### Files:
-- [ ] `storage/migrations/005_routing.sql` — таблица `task_model_runs`; `tasks.first_try_pass`; `steps.kind` (`worker|router`, по умолчанию `worker`).
-- [ ] `storage/repos.ts` — `startModelRun`, `finishModelRun`, `modelRuns(taskId)`; `setFirstTryPass`; запросы отчёта: `usageTotals(filter)`, `usageByModel(filter)`, `usageByRole(filter)` (фильтр: сессия / проект / все, начало периода).
-- [ ] `config/schema.ts` — `RoleRule.description?`; `router.system_one` без обязательного `url` при `preset`; значения по умолчанию из пресета.
-- [ ] `router/system-one/presets.ts` (новый) — данные пресетов: `typesafe`, `9router`, `openrouter`, `ollama`, `custom` (url, переменная ключа, модели, модель по умолчанию).
-- [ ] `router/system-one/adapter.ts` (новый) — `decide(state, questions)`: POST с `AbortSignal.timeout`, zod-проверка ответа, нормализация `{choice, confidence, probabilities}`, `usage` и фактическая модель; ошибки → `SystemOneError` с причиной.
-- [ ] `router/role-router.ts` (новый) — порядок: `model` старшего → `role` → System One (если включён, ролей > 1, есть ключ) → `default_role`; возвращает `ModelChoice` + шаг роутера для учёта. `model-resolver.ts` остаётся для разбора ссылок.
-- [ ] `router/escalation.ts` (новый) — `nextModel(task, runs, config)`: следующая модель цепочки `escalate` роли; `null`, если модель от старшего, цепочка кончилась или роль неизвестна.
-- [ ] `accounting/accounting.ts` — `recordRouterStep(taskId, decision)`: шаг `kind = router` с фактической моделью и стоимостью по общей цепочке (`usage.cost` → провайдер; иначе `prices.yaml`; иначе неизвестна).
-- [ ] `tasks/worker-runner.ts` — прогоны моделей (старт/финиш, итог проверки); после итогового `FAIL` с `newFailures` и `nextModel` — эскалация: стоп Pi, новый процесс на новой модели, новый `pi_session_path`, сообщение эскалации, повтор `converse → finalize → check`; предупреждение «эскалировано: A → B (FAIL после авто-круга)»; `first_try_pass` после первой проверки первой модели.
-- [ ] `tasks/prompt.ts` — `escalationMessage(taskText, prevSummary, issues, logPath)`.
-- [ ] `tasks/task-service.ts` — `start()` через `RoleRouter` (шаг роутера пишется после создания задачи); `send` на `done` — модель последнего прогона, без эскалации в этом запуске (FR-203); `usageReport(sessionId, scope, period)`.
-- [ ] `tasks/envelope.ts` — `models`; предупреждения эскалации уже в `warnings`.
-- [ ] `tasks/usage-report.ts` (новый) — сборка отчёта: итоги, разрезы, PASS с первого раза без `SKIPPED` («без проверки: N»), неизвестные цены, ужатие до 2 КБ («и ещё N»).
-- [ ] `facade/mcp-facade.ts` — `usage_report` (под запретом режима, как все).
-- [ ] `cli/init.ts` — шаг умного роутера (нет / пресет / свой адрес; модель; имя переменной ключа; тест); шаг Codex (если `codex` в PATH): профиль с блоком `# >>> pi-hub … # <<< pi-hub`, `.bak` перед изменением, инструкция `/hooks`; флаги `--router`, `--router-preset`, `--router-model`, `--router-key-env`, `--no-codex`.
-- [ ] `cli/codex-profile.ts` (новый) — шаблон блока, вставка/замена блока в тексте, проверка разбора `smol-toml`, поиск `trusted_hash` для хука pi-hub.
-- [ ] `cli/router.ts` (новый) + `cli/main.ts` — `pi-hub router status | test | off`.
-- [ ] `cli/doctor.ts` — Codex (профиль, команды, доверие); умный роутер (ключ в `.env`, описания ролей, сбои подряд из лога); модели ролей и цепочек видны Pi.
-- [ ] `cli/status.ts` — модель с пометкой эскалации (FR-230).
+- [x] `storage/migrations/005_routing.sql` — таблица `task_model_runs`; `tasks.first_try_pass`; `steps.kind` (`worker|router`, по умолчанию `worker`).
+- [x] `storage/repos.ts` — `startModelRun`, `finishModelRun`, `modelRuns(taskId)`; `setFirstTryPass`; запросы отчёта: `usageTotals(filter)`, `usageByModel(filter)`, `usageByRole(filter)` (фильтр: сессия / проект / все, начало периода).
+- [x] `config/schema.ts` — `RoleRule.description?`; `router.system_one` без обязательного `url` при `preset`; значения по умолчанию из пресета.
+- [x] `router/system-one/presets.ts` (новый) — данные пресетов: `typesafe`, `9router`, `openrouter`, `ollama`, `custom` (url, переменная ключа, модели, модель по умолчанию).
+- [x] `router/system-one/adapter.ts` (новый) — `decide(state, questions)`: POST с `AbortSignal.timeout`, zod-проверка ответа, нормализация `{choice, confidence, probabilities}`, `usage` и фактическая модель; ошибки → `SystemOneError` с причиной.
+- [x] `router/role-router.ts` (новый) — порядок: `model` старшего → `role` → System One (если включён, ролей > 1, есть ключ) → `default_role`; возвращает `ModelChoice` + шаг роутера для учёта. `model-resolver.ts` остаётся для разбора ссылок.
+- [x] `router/escalation.ts` (новый) — `nextModel(task, runs, config)`: следующая модель цепочки `escalate` роли; `null`, если модель от старшего, цепочка кончилась или роль неизвестна.
+- [x] `accounting/accounting.ts` — `recordRouterStep(taskId, decision)`: шаг `kind = router` с фактической моделью и стоимостью по общей цепочке (`usage.cost` → провайдер; иначе `prices.yaml`; иначе неизвестна).
+- [x] `tasks/worker-runner.ts` — прогоны моделей (старт/финиш, итог проверки); после итогового `FAIL` с `newFailures` и `nextModel` — эскалация: стоп Pi, новый процесс на новой модели, новый `pi_session_path`, сообщение эскалации, повтор `converse → finalize → check`; предупреждение «эскалировано: A → B (FAIL после авто-круга)»; `first_try_pass` после первой проверки первой модели.
+- [x] `tasks/prompt.ts` — `escalationMessage(taskText, prevSummary, issues, logPath)`.
+- [x] `tasks/task-service.ts` — `start()` через `RoleRouter` (шаг роутера пишется после создания задачи); `send` на `done` — модель последнего прогона, без эскалации в этом запуске (FR-203); `usageReport(sessionId, scope, period)`.
+- [x] `tasks/envelope.ts` — `models`; предупреждения эскалации уже в `warnings`.
+- [x] `tasks/usage-report.ts` (новый) — сборка отчёта: итоги, разрезы, PASS с первого раза без `SKIPPED` («без проверки: N»), неизвестные цены, ужатие до 2 КБ («и ещё N»).
+- [x] `facade/mcp-facade.ts` — `usage_report` (под запретом режима, как все).
+- [x] `cli/init.ts` — шаг умного роутера (нет / пресет / свой адрес; модель; имя переменной ключа; тест); шаг Codex (если `codex` в PATH): профиль с блоком `# >>> pi-hub … # <<< pi-hub`, `.bak` перед изменением, инструкция `/hooks`; флаги `--router`, `--router-preset`, `--router-model`, `--router-key-env`, `--no-codex`.
+- [x] `cli/codex-profile.ts` (новый) — шаблон блока, вставка/замена блока в тексте, проверка разбора `smol-toml`, поиск `trusted_hash` для хука pi-hub.
+- [x] `cli/router.ts` (новый) + `cli/main.ts` — `pi-hub router status | test | off`.
+- [x] `cli/doctor.ts` — Codex (профиль, команды, доверие); умный роутер (ключ в `.env`, описания ролей, сбои подряд из лога); модели ролей и цепочек видны Pi.
+- [x] `cli/status.ts` — модель с пометкой эскалации (FR-230).
 
 #### API / Commands:
 
@@ -130,30 +130,30 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 
 ### Fake worker (`packages/fake-worker/src/index.ts`)
 
-- [ ] Эскалация проверяется существующими сценариями (`fake/quality-broken` → `fake/quality-fix`); сообщение эскалации распознаётся по началу (`ESCALATION:`), как сообщение авто-круга.
+- [x] Эскалация проверяется существующими сценариями (`fake/quality-broken` → `fake/quality-fix`); сообщение эскалации распознаётся по началу (`ESCALATION:`), как сообщение авто-круга.
 
 ### Codex (`plugins/codex`)
 
-- [ ] `pi-hub.config.toml` — шаблон блока pi-hub: MCP-сервер, `tool_timeout_sec = 900`, `default_tools_approval_mode = "approve"`, хук Stop `pi-hub-shim hook stop --client codex`; без SessionStart (D-212, подтверждено фазой 0 — PD-211).
-- [ ] `hooks/hooks.json` — та же команда для запасного варианта.
-- [ ] `skills/architect`, `prompts/` — правила FR-225 (вопросы, FAIL, эскалация, `usage_report`).
-- [ ] `README.md` — установка через `init`, `/hooks`, проверка `doctor`.
+- [x] `pi-hub.config.toml` — шаблон блока pi-hub: MCP-сервер, `tool_timeout_sec = 900`, `default_tools_approval_mode = "approve"`, хук Stop `pi-hub-shim hook stop --client codex`; без SessionStart (D-212, подтверждено фазой 0 — PD-211).
+- [x] `hooks/hooks.json` — та же команда для запасного варианта.
+- [x] `skills/architect`, `prompts/` — правила FR-225 (вопросы, FAIL, эскалация, `usage_report`).
+- [x] `README.md` — установка через `init`, `/hooks`, проверка `doctor`.
 
 ### Claude Code plugin (`plugins/claude-code`)
 
-- [ ] `skills/architect/SKILL.md` — `usage_report`, эскалация, роль можно не указывать при умном роутере.
+- [x] `skills/architect/SKILL.md` — `usage_report`, эскалация, роль можно не указывать при умном роутере.
 
 ### Benchmarks
 
-- [ ] `benchmarks/tasks/01…06-*/` — `task.md` (текст + приёмка), `repo/` (исходные файлы), `.pi-hub.toml` (проверка), `answers.json` (заготовленные ответы).
-- [ ] `scripts/bench.ts` (новый) — модели и запуски флагами; временный `PI_HUB_HOME` с расширением 9router; MCP-клиент → shim → демон; `start(model=…)`; ответы на `needs_input`; 2 параллельно с чередованием моделей; повтор ошибок провайдера (до 3 раз, пауза); продолжение по `raw.jsonl`; таблица `benchmarks/results/<дата>.md`.
+- [x] `benchmarks/tasks/01…06-*/` — `task.md` (текст + приёмка), `repo/` (исходные файлы), `.pi-hub.toml` (проверка), `answers.json` (заготовленные ответы).
+- [x] `scripts/bench.ts` (новый) — модели и запуски флагами; временный `PI_HUB_HOME` с расширением 9router; MCP-клиент → shim → демон; `start(model=…)`; ответы на `needs_input`; 2 параллельно с чередованием моделей; повтор ошибок провайдера (до 3 раз, пауза); продолжение по `raw.jsonl`; таблица `benchmarks/results/<дата>.md`.
 
 ### Docs
 
-- [ ] `docs/adr/0008-smart-router-setup.md` — дополнение: пресет 9router, только роль, `jev-latest`, фактическая модель в шаге.
-- [ ] `docs/adr/0009-codex-architect-profile.md` — дополнение: блок между метками, без SessionStart (или с ним — итог фазы 0).
-- [ ] `docs/adr/0013-escalation.md` (новый) — эскалация в той же задаче.
-- [ ] `docs/architecture/task-lifecycle.md` — эскалация; `config/hub.example.yaml` — описания ролей, `escalate`, `router`.
+- [x] `docs/adr/0008-smart-router-setup.md` — дополнение: пресет 9router, только роль, `jev-latest`, фактическая модель в шаге.
+- [x] `docs/adr/0009-codex-architect-profile.md` — дополнение: блок между метками, без SessionStart (или с ним — итог фазы 0).
+- [x] `docs/adr/0013-escalation.md` (новый) — эскалация в той же задаче.
+- [x] `docs/architecture/task-lifecycle.md` — эскалация; `config/hub.example.yaml` — описания ролей, `escalate`, `router`.
 
 ## Implementation phases
 
@@ -324,3 +324,105 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | TD-203 | Просьба об итоге ждёт 2 мин (`summaryTimeoutMs`): если модель после неё продолжает работать (glm-5.3-flash в эталоне), задача падает `failed`, хотя модель не висит. Ждать, пока агент работает, в пределах лимита времени задачи (или до 15 мин без лимита) | 6 | Medium |
 | TD-202 | Остановка демона (`SIGTERM`) ждёт, пока все shim закроют соединения: при живых клиентах процесс не завершается, пришлось завершать принудительно. Нужен срок ожидания, после которого соединения закрываются | 5 | Medium |
 | TD-201 | Кэш проверки базы (`quality_baselines`) хранится по имени команды, а не по её тексту: если поменять команду в `.pi-hub.toml` без нового коммита базы, хаб берёт старый результат базы. Найдено тестом эскалации | 2 | Low |
+
+## Retrospective
+
+**Review date:** 2026-11-27
+**Status:** ✅ Implemented
+
+### Summary
+
+| Metric | Plan | Actual |
+|--------|------|--------|
+| Phases | 8 (0–7) | 8 |
+| Tasks | 34 | 35 (+1: `doctor` о моделях ролей в фазе 7) |
+| Files | 36 в разделе Solution | 103 (из них 39 — эталонные задачи, ~25 — тесты) |
+| Estimate (hours) | ~41 | ~10 по времени коммитов (13:02–23:22), включая ожидание ручных шагов автора |
+| Commits | — | 15 |
+
+### Implementation commits
+
+| Hash | Description | Files |
+|------|-------------|-------|
+| `cd4acb7` | docs: stage 3 implementation plan | 2 |
+| `43be4f5` | docs(plan): phase 0 findings and System One fixtures | 5 |
+| `1193962` | feat(hub): data, protocol and config; fix worker summary | 18 |
+| `63b0ab8` | feat(hub): escalate a failed task to the next model of its role | 10 |
+| `99ab85b` | feat(hub): usage_report — spending by model and role | 10 |
+| `8f28121` | feat(hub): smart router picks the task role via System One | 15 |
+| `1b2cdd3` | test(e2e): --router on a real System One | 1 |
+| `2f6c993` | docs(plan): phase 4 live router check | 5 |
+| `2d46b6b` | feat(codex): init installs the Codex architect profile | 16 |
+| `e7acfb3` | feat(codex): init installs the architect skill for Codex | 11 |
+| `168ada6` | fix(codex): keep the trust Codex writes inside the pi-hub block | 3 |
+| `b5a4bfc` | feat(bench): six reference tasks and scripts/bench.ts | 39 |
+| `f2aa152` | bench: reference run 6 × 2 × 5 on 9router | 6 |
+| `a27b864` | feat(hub): status escalation marker, doctor role models, docs | 15 |
+| `0e29955` | docs(stage-3): CI green, last success criterion ticked | 2 |
+
+### Deviations from the plan
+
+#### Added (not in the plan)
+- **Исправление итога воркера (PD-209).** Фаза 0 нашла две ошибки этапа 1: итог в разметке (`**SUMMARY:**`) не распознавался, а досрочная просьба об итоге уходила через `follow_up`, который Pi после остановки только ставит в очередь. Исправлено в фазе 1 (`finalize.ts`, `questions.ts`, фейковый воркер).
+- **Скил архитектора для Codex (PD-213).** Ручной прогон показал, что Codex работал по чужому навыку пользователя: роль не из таблицы, вопрос пользователю уходил в очередь, а не в форму. `init` теперь ставит скил pi-hub, `doctor` проверяет его актуальность.
+- **Сохранение доверия внутри блока.** Codex дописывает `[hooks.state…]` перед последним комментарием файла, то есть внутрь блока pi-hub. Повторный `init` стёр доверие у автора — добавлено сохранение чужих таблиц (`168ada6`).
+- **`e2e --router`** для живой проверки роутера.
+- **README и `hub.example.yaml`** отставали на два этапа — обновлены в фазе 7.
+- **Короткая ошибка в `pi-hub status`** вместо стека — найдено при чистой установке.
+
+#### Skipped (in the plan, not done)
+- Ничего. `version.ts` не менялся намеренно: новый MCP-инструмент не меняет протокол shim ↔ хаб.
+
+#### Changed (done differently)
+- `init` не просит ключ System One скрытым вводом: ключ пользователь кладёт в `~/.pi-hub/.env` сам. Отдельной команды `router setup` нет, её роль выполняет повторный `init`.
+- Диалект `cloudflare-run` не реализован, такие пресеты `init` не предлагает.
+- `send` на `interrupted` может эскалировать, а на `done`/`failed` — нет (уточнение FR-203).
+- `delegation_on_connect` у Codex исправлен на `false` (D-207); совет ADR-0010 отменён.
+- Периоды `usage_report` — скользящие окна (24 ч / 7 дней / 30 дней), а не календарные.
+- Таблица ролей у автора — не предложенная по эталонам (Inkling-2-small основной), а выбор автора: Deepseek-v4.1-flash, затем Inkling-2-small, затем Hy4-flash.
+
+### Requirements coverage
+
+| Requirement | Status | Comment |
+|-------------|--------|---------|
+| FR-201 | ✅ Implemented | описание и цепочка роли; `doctor` о моделях ролей и цепочек |
+| FR-202 | ✅ Implemented | эскалация в `WorkerRun` |
+| FR-203 | ✅ Implemented | исключения; `send` на `interrupted` — уточнение |
+| FR-204 | ✅ Implemented | `models`, предупреждение, `routed_by = escalation` |
+| FR-205 | ✅ Implemented | `task_model_runs`, `first_try_pass` |
+| FR-206 | ✅ Implemented | `usage_report` ≤ 2 КБ |
+| FR-207 | ✅ Implemented | профиль Codex |
+| FR-208 | ✅ Implemented | `init`: блок между метками, `.bak`, доверие сохраняется |
+| FR-209 | ✅ Implemented | хук Stop `--client codex` |
+| FR-210 | ✅ Implemented | `doctor`: профиль, доверие, скил |
+| FR-211 | ✅ Implemented | шесть эталонных задач |
+| FR-212 | ✅ Implemented | `scripts/bench.ts`, прогон 60 запусков |
+| FR-220 | ✅ Implemented | `RoleRouter`, адаптер System One |
+| FR-221 | ✅ Implemented | пресеты; без `cloudflare-run` |
+| FR-222 | ✅ Implemented | шаг роутера в учёте, `router.log` |
+| FR-223 | ✅ Implemented | шаг роутера в `init`, флаги |
+| FR-224 | ✅ Implemented | `router status/test/off`, `doctor` |
+| FR-225 | ✅ Implemented | скилы Claude Code и Codex |
+| FR-230 | ✅ Implemented | «↑» в `pi-hub status` |
+
+### Lessons
+
+1. **Фаза 0 на настоящих моделях окупилась.** Прогон пяти моделей нашёл две ошибки этапа 1, которые фейковый воркер скрывал: он отвечал на `follow_up` сразу, а Pi — нет. Рекомендация: фейковый воркер должен повторять поведение Pi и в неудобных местах, а каждый этап — начинаться с короткого прогона на реальной модели.
+2. **Ручной прогон у автора ловит то, чего нет в тестах.** Чужой навык в Codex и стирание доверия при повторном `init` нашлись только на настоящей машине автора. Рекомендация: в плане каждого этапа с интеграцией клиента — ручной прогон до закрытия фазы и повторный `init` на реальном файле.
+3. **Тесты не должны касаться настоящих настроек.** Тест `init` записал профиль в настоящий `~/.codex`, потому что в окружении не был задан `CODEX_HOME`. Рекомендация: каждый новый внешний путь (`CODEX_HOME`, `PI_HUB_HOME` и т. п.) сразу переопределять во всех тестах, а не после находки.
+4. **Эталоны упёрлись в потолок.** Три модели прошли 12/12, авто-круг и эскалация в прогоне не сработали ни разу. Рекомендация: добавить задачи, на которых лучшие модели ошибаются, иначе порядок цепочки данными не подкреплён.
+5. **Классификатор ошибок должен смотреть на причину, а не на весь лог.** Таймаут модели засчитался как ошибка провайдера и дал ложный PASS. Рекомендация: в инструментах измерения отделять ошибки среды от результата модели по явным признакам и проверять классификатор на записанных случаях.
+6. **Оценки завышены примерно в 4 раза.** ~41 ч плана против ~10 ч по коммитам, как и на прошлых этапах. Рекомендация: оценивать в «сессиях» или делить прежние оценки на 3–4, а ручные шаги автора оценивать отдельно.
+
+### Recommendations
+
+- Технический долг этапа в бэклоге: TD-203 → T-018, TD-202 → T-019 (оба Medium); обновление действий CI → T-020; эталоны сложнее → T-021. TD-201 повторяет T-014 (TD-102) — отдельной записи не нужно.
+- CI: действия `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4` рассчитаны на Node.js 20, GitHub запускает их на Node.js 24 с предупреждением — обновить версии.
+- Перед этапом 4: эталонные задачи сложнее и прогон с включённой эскалацией, чтобы проверить цепочку автора на данных.
+- Цены 9router неизвестны — для осмысленного `usage_report` задать ручные цены в `~/.pi-hub/prices.yaml`.
+
+### Closing deferred questions
+
+| Question | Decision | Where it was recorded |
+|----------|----------|-----------------------|
+| — (отложенных вопросов в плане и спецификации не было) | — | — |
