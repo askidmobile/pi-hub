@@ -7,6 +7,9 @@
  *   pnpm build && pnpm e2e --model <provider>/<id> [--extension <path>]... [--scenario ask] [--keep]
  *
  * `--scenario basic` (default, stage 1): start -> wait -> result -> merge.
+ * `--router` (stage 3): two roles with descriptions and the System One preset 9router; `start`
+ * goes without a role, the smart router must pick `code`; the request is a router step in
+ * `usage_report`. The key `NINEROUTER_API_KEY` comes from the environment or ~/.pi-hub/.env.
  * `--scenario ask` (stage 2): the worker must ask with `ask`; `wait` returns the question, the
  * pending line is in the next response, `send` answers it; the quality command from
  * `.pi-hub.toml` gives the verdict. Then the cost line without a manual price, and a second
@@ -50,6 +53,7 @@ function args(): { model: string; extensions: string[]; keep: boolean; scenario:
   const argv = process.argv.slice(2);
   const extensions: string[] = [];
   let model = process.env.PI_HUB_E2E_MODEL ?? "";
+  let router = false;
   let keep = false;
   let scenario: Scenario = "basic";
   for (let i = 0; i < argv.length; i++) {
@@ -57,15 +61,16 @@ function args(): { model: string; extensions: string[]; keep: boolean; scenario:
     if (a === "--model") model = argv[++i] ?? "";
     else if (a === "--extension") extensions.push(resolve(argv[++i] ?? ""));
     else if (a === "--keep") keep = true;
+    else if (a === "--router") router = true;
     else if (a === "--scenario") scenario = argv[++i] === "ask" ? "ask" : "basic";
   }
   if (!/^[^/\s]+\/\S+$/.test(model)) {
     console.error(
-      "usage: pnpm e2e --model <provider>/<id> [--extension <path>]... [--scenario ask] [--keep]",
+      "usage: pnpm e2e --model <provider>/<id> [--extension <path>]... [--scenario ask] [--router] [--keep]",
     );
     process.exit(2);
   }
-  return { model, extensions, keep, scenario };
+  return { model, extensions, keep, scenario, router };
 }
 
 function step(msg: string): void {
@@ -94,7 +99,7 @@ function filesContaining(dir: string, needle: string, skip: string[]): string[] 
 }
 
 async function main(): Promise<void> {
-  const { model, extensions, keep, scenario } = args();
+  const { model, extensions, keep, scenario, router } = args();
   if (!existsSync(SHIM) || !existsSync(join(HUB_DIST, "cli/main.js"))) {
     console.error("build first: pnpm build");
     process.exit(2);
@@ -121,6 +126,14 @@ async function main(): Promise<void> {
     : undefined;
   if (keyVar && !key) {
     console.error(`no ${keyVar} in the environment or ~/.pi-hub/.env`);
+    process.exit(2);
+  }
+  const ROUTER_KEY = "NINEROUTER_API_KEY";
+  const routerKey = router
+    ? (process.env[ROUTER_KEY] ?? loadSecrets(join(homedir(), ".pi-hub/.env")).values[ROUTER_KEY])
+    : undefined;
+  if (router && !routerKey) {
+    console.error(`--router: no ${ROUTER_KEY} in the environment or ~/.pi-hub/.env`);
     process.exit(2);
   }
 
@@ -150,14 +163,25 @@ async function main(): Promise<void> {
       join(home, "config.yaml"),
       JSON.stringify({
         allowed_repos: [repoRoot],
-        roles: { code: { model } },
-        default_role: "code",
+        roles: router
+          ? {
+              code: { model, description: "writing or changing code and its tests" },
+              docs: { model, description: "documentation only: README and docs, no code" },
+            }
+          : { code: { model } },
+        default_role: router ? "docs" : "code",
+        ...(router ? { router: { smart: true, system_one: { preset: "9router" } } } : {}),
         pi: { extensions },
         limits: { max_task_minutes: 15, max_task_usd: 0.5 },
       }),
       { mode: 0o600 },
     );
-    writeFileSync(join(home, ".env"), keyVar && key ? `${keyVar}=${key}\n` : "", { mode: 0o600 });
+    writeFileSync(
+      join(home, ".env"),
+      (keyVar && key ? `${keyVar}=${key}\n` : "") +
+        (routerKey ? `${ROUTER_KEY}=${routerKey}\n` : ""),
+      { mode: 0o600 },
+    );
 
     step("pi-hub doctor");
     const doctorEnv = { ...process.env, PI_HUB_HOME: home };
@@ -300,6 +324,13 @@ async function main(): Promise<void> {
       });
       const taskId = started.task_id as string;
       console.log(`  ${JSON.stringify(started)}`);
+      if (router) {
+        // default_role is docs: only System One can route this task to code
+        check(
+          String(started.route_reason).startsWith("system_one: role code"),
+          `smart router: ${String(started.route_reason)}`,
+        );
+      }
 
       step("wait");
       let status = "";
@@ -321,14 +352,28 @@ async function main(): Promise<void> {
       const hello = readFileSync(join(repoRoot, "hello.txt"), "utf8").trim();
       console.log(`  hello.txt: ${hello}`);
       if (hello !== "hello from pi-hub") throw new Error("hello.txt has unexpected content");
+      if (router) {
+        step("usage_report: the router step");
+        const report = await call("usage_report", { scope: "session", period: "day" });
+        console.log(JSON.stringify(report, null, 2));
+        const rows = report.by_model as { name: string }[];
+        check(
+          rows.some((r) => r.name.startsWith("9router/jev-")),
+          "System One request is a step with the actual model",
+        );
+      }
     }
 
-    if (key) {
-      step(`key leak check (${keyVar})`);
+    for (const [name, value] of [
+      [keyVar, key],
+      [ROUTER_KEY, routerKey],
+    ] as const) {
+      if (!value) continue;
+      step(`key leak check (${name})`);
       const hits = [
-        ...filesContaining(home, key, [join(home, ".env")]),
-        ...filesContaining(repoRoot, key, []),
-        ...filesContaining(ROOT, key, [join(ROOT, "node_modules"), join(ROOT, ".git")]),
+        ...filesContaining(home, value, [join(home, ".env")]),
+        ...filesContaining(repoRoot, value, []),
+        ...filesContaining(ROOT, value, [join(ROOT, "node_modules"), join(ROOT, ".git")]),
       ];
       if (hits.length) throw new Error(`key found in: ${hits.join(", ")}`);
       console.log("  not found outside the temp .env");
