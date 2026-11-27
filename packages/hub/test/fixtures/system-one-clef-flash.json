@@ -1,0 +1,42 @@
+{
+  "recorded": "2026-11-27",
+  "url": "https://omni-fr.archteam.org/v1/systemone",
+  "status": 200,
+  "latency_ms": 1440,
+  "request": {
+    "model": "ollama/clef-flash",
+    "state": "Task: Add a function `slugify(title)` to src/strings.ts that lowercases, trims and replaces spaces with dashes, with unit tests.\nRepository: small TypeScript library with vitest.",
+    "questions": {
+      "role": {
+        "type": "choice",
+        "instructions": "Which role should handle this task?",
+        "criteria": {
+          "design": "architecture, API and data design before coding",
+          "code": "writing or changing code and its tests",
+          "review": "reviewing existing changes without writing code",
+          "docs": "documentation only"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "clef-flash",
+    "answers": {
+      "role": {
+        "type": "choice",
+        "choice": "code",
+        "confidence": 0.9039,
+        "probabilities": {
+          "design": 0.0141,
+          "code": 0.963,
+          "review": 0.0181,
+          "docs": 0.0049
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 219,
+      "output_tokens": 0
+    }
+  }
+}

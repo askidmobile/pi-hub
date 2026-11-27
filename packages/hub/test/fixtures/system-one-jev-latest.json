@@ -1,0 +1,42 @@
+{
+  "recorded": "2026-11-27",
+  "url": "https://omni-fr.archteam.org/v1/systemone",
+  "status": 200,
+  "latency_ms": 1050,
+  "request": {
+    "model": "typesafe/jev-latest",
+    "state": "Task: Add a function `slugify(title)` to src/strings.ts that lowercases, trims and replaces spaces with dashes, with unit tests.\nRepository: small TypeScript library with vitest.",
+    "questions": {
+      "role": {
+        "type": "choice",
+        "instructions": "Which role should handle this task?",
+        "criteria": {
+          "design": "architecture, API and data design before coding",
+          "code": "writing or changing code and its tests",
+          "review": "reviewing existing changes without writing code",
+          "docs": "documentation only"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "jev-1.14.0",
+    "answers": {
+      "role": {
+        "type": "choice",
+        "choice": "code",
+        "confidence": 1,
+        "probabilities": {
+          "design": 0,
+          "code": 1,
+          "review": 0,
+          "docs": 0
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 398,
+      "output_tokens": 45
+    }
+  }
+}

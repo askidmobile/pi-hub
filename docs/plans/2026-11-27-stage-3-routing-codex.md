@@ -1,7 +1,7 @@
 # Plan: Этап 3 — роутинг, эскалация, Codex и отчёт о расходах
 
 **Date:** 2026-11-27
-**Status:** 📝 Planning
+**Status:** 🔄 Implementing
 **Priority:** P1
 **Specification:** [docs/specs/2026-11-27-stage-3-routing-codex.md](../specs/2026-11-27-stage-3-routing-codex.md)
 
@@ -134,7 +134,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 
 ### Codex (`plugins/codex`)
 
-- [ ] `pi-hub.config.toml` — шаблон блока pi-hub: MCP-сервер, `tool_timeout_sec = 900`, `default_tools_approval_mode = "approve"`, хук Stop `pi-hub-shim hook stop --client codex`; без SessionStart (D-212; вернуть, если фаза 0 покажет иное — D-213).
+- [ ] `pi-hub.config.toml` — шаблон блока pi-hub: MCP-сервер, `tool_timeout_sec = 900`, `default_tools_approval_mode = "approve"`, хук Stop `pi-hub-shim hook stop --client codex`; без SessionStart (D-212, подтверждено фазой 0 — PD-211).
 - [ ] `hooks/hooks.json` — та же команда для запасного варианта.
 - [ ] `skills/architect`, `prompts/` — правила FR-225 (вопросы, FAIL, эскалация, `usage_report`).
 - [ ] `README.md` — установка через `init`, `/hooks`, проверка `doctor`.
@@ -158,13 +158,15 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 ## Implementation phases
 
 ### Phase 0: Проверка допущений (estimate: 2 h)
-- [ ] Дерево процессов Codex 0.172: временный `CODEX_HOME` (не пользовательский), пробный хук Stop и пробный MCP-сервер пишут свои `ppid`-цепочки; проверить, есть ли общий предок с `parent_pid` shim. Если без интерактивного доверия хук не запускается — одна команда пользователю (~2 мин) → итог в PD
-- [ ] Ключи профиля Codex 0.172: `mcp_servers`, `tool_timeout_sec`, `default_tools_approval_mode`, хуки — разбираются без ошибок (`codex --profile … mcp list`)
-- [ ] Записать фикстуры System One 9router: успешные ответы `typesafe/jev-latest` и `ollama/clef-flash` (choice по ролям), ошибка 400; ключ — из `.env`/расширения, в фикстуры не попадает → `packages/hub/test/fixtures/system-one-*.json`
-- [ ] Проверить, что пять моделей сравнения запускаются воркером (одна короткая задача на каждую через `pnpm e2e`)
-- **Independent check:** итоги записаны в «Plan decisions» (PD-1xx), фикстуры в репозитории без ключа.
+- [x] Дерево процессов Codex 0.172: временный `CODEX_HOME` (не пользовательский), пробный хук Stop и пробный MCP-сервер пишут свои `ppid`-цепочки; проверить, есть ли общий предок с `parent_pid` shim. Если без интерактивного доверия хук не запускается — одна команда пользователю (~2 мин) → итог в PD
+- [x] Ключи профиля Codex 0.172: `mcp_servers`, `tool_timeout_sec`, `default_tools_approval_mode`, хуки — разбираются без ошибок (`codex --profile … mcp list`)
+- [x] Записать фикстуры System One 9router: успешные ответы `typesafe/jev-latest` и `ollama/clef-flash` (choice по ролям), ошибка 400; ключ — из `.env`/расширения, в фикстуры не попадает → `packages/hub/test/fixtures/system-one-*.json`
+- [x] Проверить, что пять моделей сравнения запускаются воркером (одна короткая задача на каждую через `pnpm e2e`)
+- deviated: прогон пяти моделей нашёл две ошибки этапа 1 (PD-209): итог в разметке (`**SUMMARY:**`) не распознаётся, а досрочная просьба написать итог уходит через `follow_up`, который Pi после остановки агента только ставит в очередь (`disposition: queued`) — задача падает по таймауту. Исправление — первая задача фазы 1.
+- **Independent check:** итоги записаны в «Plan decisions» (PD-208…), фикстуры в репозитории без ключа.
 
-### Phase 1: Данные, протокол, конфиг (estimate: 4 h)
+### Phase 1: Данные, протокол, конфиг (estimate: 5 h)
+- [ ] Итог воркера (PD-209): распознавать `SUMMARY:` в разметке (`**SUMMARY:**`, `## SUMMARY`, `SUMMARY**:`); досрочную просьбу об итоге отправлять `prompt`, а не `follow_up`; фейковый воркер — `follow_up` после остановки только ставит в очередь, как Pi; сценарий с итогом в разметке → `tasks/finalize.ts`, `packages/fake-worker/src/index.ts`
 - [ ] Миграция `005_routing.sql` + методы `repos.ts` (прогоны моделей, `first_try_pass`, `steps.kind`, запросы отчёта)
 - [ ] [P] Протокол: `usage_report` в списке инструментов, `models` в конверте, тип `UsageReport` → `packages/protocol/src/*`
 - [ ] [P] Конфиг: `RoleRule.description`, пресеты System One → `config/schema.ts`, `router/system-one/presets.ts`
@@ -197,7 +199,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 - [ ] `cli/codex-profile.ts`: блок между метками, `.bak`, проверка TOML, поиск доверия (FR-207, FR-208, D-216)
 - [ ] `init` (шаг Codex) и `doctor` (FR-208, FR-210)
 - [ ] Профиль, `hooks.json`, скил и prompts Codex, README → `plugins/codex/*` (FR-207, FR-225)
-- [ ] Хук Stop с `--client codex` (FR-209); при необходимости — SessionStart по итогу фазы 0 (D-213)
+- [ ] Хук Stop с `--client codex` (FR-209); SessionStart не нужен (PD-211)
 - [ ] Тесты: профиль создаётся; повторный `init` на файле с `[hooks.state…]`, `[projects…]` и комментариями меняет только блок; `.bak`; `doctor` с доверием и без; хук через shim с `--client codex` блокирует один раз
 - [ ] Ручной прогон в `codex --profile pi-hub` (пользователь): вопрос воркера, хук Stop, ответ, итог
 - **Independent check:** тесты Codex зелёные; ручной прогон пройден.
@@ -281,6 +283,10 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | PD-204 | Как проверить дерево процессов Codex в фазе 0 | Сначала автоматически во временном `CODEX_HOME`; если хук без интерактивного доверия не запускается — одна команда пользователю (~2 мин) | 2026-11-27 |
 | PD-205 | Где живёт эскалация | Внутри одного `WorkerRun`: стоп Pi → новый процесс на следующей модели в том же worktree → тот же путь `converse → finalize → check`. Для старшего — одна задача (D-203); история — `task_model_runs` | 2026-11-27 |
 | PD-206 | Шаг роутера в учёте | Пишется после создания задачи (`steps.kind = router`) с фактической моделью из ответа; стоимость — общая цепочка этапа 2 | 2026-11-27 |
+| PD-208 | Фаза 0: профиль Codex и MCP-сервер в Codex 0.172 | Профиль с блоком между метками-комментариями разбирается Codex 0.172 (`codex --profile … mcp get pi-hub`: `tool_timeout_sec 900`, `default_tools_approval_mode approve`); без профиля pi-hub не виден. MCP-сервер Codex запускает прямым ребёнком процесса `codex` (`node ← codex`) — `parent_pid` shim = PID `codex`. Хуки во временном `CODEX_HOME` не срабатывают (нет доверия и входа) → ручной шаг (PD-204) | 2026-11-27 |
+| PD-209 | Фаза 0: пять моделей через `pnpm e2e` | `Deepseek-v4.1-flash` (0,7 мин), `glm-5.3-flash` (0,4), `Hy4-flash` (0,2), `Inkling-2-small` (0,2) — `done`, ветка слита; `gpt-oss-120b` — `failed` «summary follow-up timed out»: модель написала `**SUMMARY:**`, хаб не узнал итог, а `follow_up` после остановки агента Pi только ставит в очередь. Ошибки этапа 1 (фейковый воркер отвечал на `follow_up` сразу). Исправление — фаза 1; стоимость у всех пяти «цена неизвестна» | 2026-11-27 |
+| PD-210 | Фаза 0: System One на 9router, фикстуры | `typesafe/jev-latest` → `jev-1.14.0`, роль `code` с уверенностью 1,0 за ~1 с; `ollama/clef-flash` → `code`, 0,90, ~1,4 с, `output_tokens: 0`; без `questions` → `400 {"error":{"message":"Missing required field: questions"}}`. Стоимости в ответах нет. Фикстуры `test/fixtures/system-one-*.json`, ключа в них нет (проверено поиском значения) | 2026-11-27 |
+| PD-211 | Фаза 0: найдёт ли хаб сессию Codex по хуку | Да. Ручной прогон автора в Codex 0.172 (пробный профиль, доверие «Trust all»): MCP-сервер `node ← codex(45784)`, хуки SessionStart и Stop `sh ← codex(45784)` — общий предок `codex` в 1–2 шага, а `parent_pid` shim = PID `codex`. Хук SessionStart не нужен (D-212 подтверждено, D-213 не понадобился). Доверие Codex пишет в сам файл профиля: `[hooks.state."<путь профиля>:stop:0:0"] trusted_hash = "sha256:…"` — по этой записи `doctor` проверяет доверие. Пробный профиль удалён | 2026-11-27 |
 | PD-207 | Переменная ключа пресета 9router | `NINEROUTER_API_KEY` (имя переменной не может начинаться с цифры); значение пользователь кладёт в `~/.pi-hub/.env` | 2026-11-27 |
 
 ## Tech Debt

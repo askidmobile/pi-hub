@@ -1,0 +1,17 @@
+{
+  "recorded": "2026-11-27",
+  "url": "https://omni-fr.archteam.org/v1/systemone",
+  "status": 400,
+  "latency_ms": 360,
+  "request": {
+    "model": "typesafe/jev-latest",
+    "state": "Task: Add a function `slugify(title)` to src/strings.ts that lowercases, trims and replaces spaces with dashes, with unit tests.\nRepository: small TypeScript library with vitest."
+  },
+  "response": {
+    "error": {
+      "message": "Missing required field: questions",
+      "type": "invalid_request_error",
+      "code": "bad_request"
+    }
+  }
+}
