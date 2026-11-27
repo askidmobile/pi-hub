@@ -75,7 +75,16 @@ export function upsertBlock(text: string | null, block = renderBlock()): string 
     if (begin < 0 || end < begin || src.indexOf(BEGIN, begin + 1) >= 0) {
       throw new ProfileError(`метки ${BEGIN} / ${END} повреждены: поправьте файл вручную`);
     }
-    out = src.slice(0, begin) + block + src.slice(end + END.length);
+    // Codex writes trust (`[hooks.state…]`, `[projects…]`) before the file's last comment,
+    // i.e. inside the block when it ends the file: keep every table that is not pi-hub's and
+    // move it after the closing marker (stage 3 D-216, found in the manual run PD-213).
+    const foreign = foreignSections(src.slice(begin, end));
+    const rest = src.slice(end + END.length);
+    out =
+      src.slice(0, begin) +
+      block +
+      (foreign ? `\n\n${foreign}${rest.startsWith("\n") ? "" : "\n"}` : "") +
+      rest;
   } else {
     if (src.trim()) {
       const parsed = parseProfile(src);
@@ -90,6 +99,42 @@ export function upsertBlock(text: string | null, block = renderBlock()): string 
   }
   parseProfile(out);
   return out;
+}
+
+const OUR_HOOK_RE = /pi-hub(-shim)? hook stop/;
+
+/**
+ * Tables inside the old block that pi-hub does not own, as text in their order: everything
+ * except `[mcp_servers.pi-hub…]` and a `[[hooks.Stop]]` group whose hooks run the pi-hub hook.
+ */
+export function foreignSections(region: string): string {
+  const lines = region.split("\n").filter((l) => !l.startsWith(BEGIN));
+  const sections: { header: string; lines: string[] }[] = [];
+  for (const line of lines) {
+    const header = /^\s*\[/.test(line) ? line.trim() : null;
+    if (header || !sections.length) sections.push({ header: header ?? "", lines: [] });
+    (sections.at(-1) as { lines: string[] }).lines.push(line);
+  }
+  const keep: string[] = [];
+  for (let i = 0; i < sections.length; i++) {
+    const sec = sections[i] as { header: string; lines: string[] };
+    if (/^\[mcp_servers\.pi-hub[\].]/.test(sec.header)) continue;
+    if (sec.header === "[[hooks.Stop]]") {
+      // the group and its `[[hooks.Stop.hooks]]` entries
+      const group = [sec];
+      while (sections[i + 1]?.header.startsWith("[[hooks.Stop."))
+        group.push(sections[++i] as typeof sec);
+      const text = group.flatMap((g) => g.lines).join("\n");
+      if (!OUR_HOOK_RE.test(text)) keep.push(text);
+      continue;
+    }
+    const text = sec.lines.join("\n");
+    if (text.trim()) keep.push(text);
+  }
+  return keep
+    .map((t) => t.replace(/^\n+|\s+$/g, ""))
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function parseProfile(text: string): Record<string, unknown> {

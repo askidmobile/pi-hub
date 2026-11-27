@@ -86,6 +86,45 @@ describe("Codex profile", () => {
     expect(inspectProfile(env)).toMatchObject({ mcpOk: true, trusted: true });
   });
 
+  it("keeps the trust Codex wrote inside the block (the file ends with the marker, PD-213)", () => {
+    // Codex puts new tables before the file's last comment: inside the pi-hub block
+    const codexWritten = renderBlock().replace(
+      `\n${END}`,
+      [
+        "",
+        "",
+        "[hooks.state]",
+        "",
+        trust(0).trimEnd(),
+        "",
+        '[projects."/Users/u/tmp/try"]',
+        'trust_level = "trusted"',
+        "",
+        "[[hooks.Stop]]",
+        "[[hooks.Stop.hooks]]",
+        'type = "command"',
+        'command = "say done"',
+        END,
+      ].join("\n"),
+    );
+    writeFileSync(file, `${codexWritten}\n`);
+    expect(inspectProfile(env).trusted).toBe(true);
+    expect(installProfile(env).action).toBe("updated");
+    const after = readFileSync(file, "utf8");
+    const doc = parse(after) as unknown as ProfileDoc & {
+      hooks: { state: Record<string, unknown> };
+    };
+    expect(doc.projects["/Users/u/tmp/try"]?.trust_level).toBe("trusted");
+    expect(doc.hooks.Stop.map((g) => g.hooks[0]?.command)).toEqual([
+      "pi-hub-shim hook stop --client codex",
+      "say done",
+    ]);
+    expect(inspectProfile(env)).toMatchObject({ mcpOk: true, trusted: true, hook: { group: 0 } });
+    // the foreign tables now follow the closing marker, and the next run changes nothing
+    expect(after.indexOf("[hooks.state]")).toBeGreaterThan(after.indexOf(END));
+    expect(installProfile(env).action).toBe("kept");
+  });
+
   it("appends to a profile without markers; the hook index follows the user's own Stop hooks", () => {
     writeFileSync(
       file,
