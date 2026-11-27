@@ -231,10 +231,15 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 - deviated: классификатор ошибок провайдера сначала искал признаки во всём логе задачи и принял превышение времени glm на 06 за ошибку провайдера (повтор прошёл); исправлено — только причина и `errorMessage` ответов модели, превышение времени и лимит стоимости — всегда результат модели; запись исправлена в `raw.jsonl`.
 
 ### Phase 7: Закрытие (estimate: 3 h)
-- [ ] ADR-0008, ADR-0009 (дополнения), ADR-0013 (эскалация), `task-lifecycle.md`, `config/hub.example.yaml`
-- [ ] `pi-hub status` с пометкой эскалации (FR-230)
-- [ ] `pnpm build && pnpm lint && pnpm typecheck && pnpm test`, CI зелёный; чистая установка по README (урок этапа 2)
+- [x] ADR-0008, ADR-0009 (дополнения), ADR-0013 (эскалация), `task-lifecycle.md`, `config/hub.example.yaml`
+- [x] `pi-hub status` с пометкой эскалации (FR-230)
+- [x] `doctor`: модели ролей и цепочек эскалации, которых Pi не видит (FR-201)
+- [x] `pnpm build && pnpm lint && pnpm typecheck && pnpm test` локально; чистая установка по README (урок этапа 2). CI — после отправки в GitHub
 - **Independent check:** ворота этапа 3 из спецификации отмечены.
+- deviated: проверка `doctor` о моделях ролей (FR-201) в трассировке стояла на фазе 7, а в чек-листе не было — добавлена задачей. Это предупреждение, а не ошибка: основную модель по умолчанию уже проверяет «Pi видит модель». Ключи провайдеров для пробы Pi берутся у всех моделей ролей и цепочек; цены проверяются и у моделей цепочек.
+- deviated: в `pi-hub status` модель — последнего прогона (`task_model_runs`), по «↑» на каждую эскалацию («9router/Hy4-flash ↑↑»); провайдер не отбрасывается, как и в остальных строках.
+- deviated: README отставал (статус «этап 1», нет роутера, Codex, ролей, `usage_report`, эталонов) — обновлён. В `config/hub.example.yaml` не было `roles`, `default_role`, `router` — добавлены (пример проходит схему). Порядок моделей в примере — выбор автора после эталонов: Deepseek-v4.1-flash, затем Inkling-2-small, затем Hy4-flash (у автора записан в `~/.pi-hub/config.yaml`).
+- deviated: чистая установка — свежий клон, `pnpm install`, `pnpm build`, запуск CLI: прошло. `pnpm run link:bins` не запускался, чтобы не перезаписать обёртки автора в `~/.local/bin`. `pi-hub status` на слишком длинном пути сокета падал со стеком — теперь короткая ошибка и код 1.
 
 **Итого:** ~41 h.
 
@@ -242,7 +247,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 
 | Requirement | Phase | Tasks |
 |-------------|-------|-------|
-| FR-201 | 1, 4, 7 | `RoleRule.description`, `escalate`; `doctor` о моделях ролей — 🔶 описание роли (фаза 1) |
+| FR-201 | 1, 4, 7 | `RoleRule.description`, `escalate`; `doctor` о моделях ролей и цепочек — ✅ |
 | FR-202 | 2 | эскалация в `WorkerRun`, `escalation.ts` — ✅ |
 | FR-203 | 2 | исключения эскалации — ✅ |
 | FR-204 | 2 | `models`, предупреждение, `routed_by = escalation` — ✅ |
@@ -260,7 +265,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | FR-223 | 4 | `init` роутер — ✅ |
 | FR-224 | 4 | `router status/test/off`, `doctor` — ✅ |
 | FR-225 | 3, 5 | скилы Claude Code и Codex — ✅ |
-| FR-230 | 7 | `pi-hub status` |
+| FR-230 | 7 | `pi-hub status` с «↑» — ✅ |
 
 ## Complexity & principle deviations
 

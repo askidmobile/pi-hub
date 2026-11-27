@@ -22,7 +22,7 @@
 | T-011 | 2026-11-27 | Спека этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/specs/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
 | T-012 | 2026-11-27 | Реализация этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
 | T-016 | 2026-11-27 | Спека этапа 3: роутинг, эскалация, Codex, usage_report | [`2026-11-27-stage-3-routing-codex.md`](docs/specs/2026-11-27-stage-3-routing-codex.md) | ✅ Done |
-| T-017 | 2026-11-27 | Реализация этапа 3: роутинг, эскалация, Codex, usage_report | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | 🔄 Фаза 6 из 7 |
+| T-017 | 2026-11-27 | Реализация этапа 3: роутинг, эскалация, Codex, usage_report | [`2026-11-27-stage-3-routing-codex.md`](docs/plans/2026-11-27-stage-3-routing-codex.md) | 🔄 Фазы 7 из 7, ждёт ревью |
 
 ## 📦 Backlog
 

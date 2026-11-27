@@ -8,7 +8,7 @@ import {
   stepFromMessage,
   UNKNOWN_PRICE,
 } from "../src/accounting/accounting.js";
-import { priceSourceChecks } from "../src/cli/doctor.js";
+import { priceSourceChecks, roleModelChecks } from "../src/cli/doctor.js";
 import { type Price, PriceBook } from "../src/config/prices.js";
 import type { AssistantMessage } from "../src/pi-rpc/events.js";
 import { tempDir } from "./helpers.js";
@@ -121,6 +121,41 @@ describe("doctor: price source of role models (FR-128)", () => {
     } finally {
       dir.cleanup();
     }
+  });
+});
+
+describe("doctor: role and chain models Pi does not list (stage 3 FR-201)", () => {
+  const roles = {
+    code: { model: "p/a", escalate: ["p/b", "p/c"] },
+    docs: { model: "p/b" },
+  };
+  it("all visible: one ok line without the already probed default model", () => {
+    const checks = roleModelChecks(
+      { roles },
+      ["a", "b", "c"].map((id) => ({ provider: "p", id })),
+      "p/a",
+    );
+    expect(checks).toEqual([
+      { level: "ok", name: "модели ролей", detail: "Pi видит все: p/b, p/c" },
+    ]);
+  });
+  it("a missing chain model is a warning naming the role", () => {
+    const checks = roleModelChecks(
+      { roles },
+      [
+        { provider: "p", id: "a" },
+        { provider: "p", id: "b" },
+      ],
+      "p/a",
+    );
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.level).toBe("warn");
+    expect(checks[0]?.detail).toMatch(/^p\/c нет среди моделей Pi: роль code \(эскалация\)/);
+  });
+  it("a missing role model that is also a chain model names both", () => {
+    const checks = roleModelChecks({ roles }, [{ provider: "p", id: "c" }]);
+    expect(checks.map((c) => c.detail.split(" нет")[0])).toEqual(["p/a", "p/b"]);
+    expect(checks[1]?.detail).toContain("роль code (эскалация), docs");
   });
 });
 

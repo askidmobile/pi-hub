@@ -13,6 +13,9 @@ import { summaryRow } from "../tasks/envelope.js";
 export type StatusRow = TaskRow & {
   question_text?: string | null;
   question_asked_at?: string | null;
+  /** Model of the latest run and the number of runs (stage 3 FR-230). */
+  last_model?: string | null;
+  model_runs?: number;
 };
 
 export function listTasks(env: NodeJS.ProcessEnv = process.env, limit = 50): StatusRow[] {
@@ -23,7 +26,10 @@ export function listTasks(env: NodeJS.ProcessEnv = process.env, limit = 50): Sta
     db.exec("PRAGMA busy_timeout = 2000");
     return db
       .prepare(
-        `SELECT t.*, q.text AS question_text, q.asked_at AS question_asked_at
+        `SELECT t.*, q.text AS question_text, q.asked_at AS question_asked_at,
+           (SELECT r.model FROM task_model_runs r WHERE r.task_id = t.id
+            ORDER BY r.seq DESC LIMIT 1) AS last_model,
+           (SELECT COUNT(*) FROM task_model_runs r WHERE r.task_id = t.id) AS model_runs
          FROM tasks t
          LEFT JOIN questions q ON q.task_id = t.id AND q.answered_at IS NULL
          ORDER BY t.created_at DESC, t.id DESC LIMIT ?`,
@@ -47,6 +53,14 @@ export function questionCell(t: StatusRow, now = Date.now()): string | null {
   return `? ${text} · ждёт ${minutes < 1 ? "<1" : minutes} мин`;
 }
 
+/** Model of the latest run, one «↑» per escalation: «9router/glm-5.3-flash ↑» (FR-230). */
+export function modelCell(t: StatusRow): string {
+  const model = t.last_model ?? t.model;
+  if (!model) return "—";
+  const escalations = Math.max(0, (t.model_runs ?? 0) - 1);
+  return escalations ? `${model} ${"↑".repeat(escalations)}` : model;
+}
+
 export function formatTasks(tasks: StatusRow[]): string {
   if (!tasks.length) return "Задач нет.";
   const rows = tasks.map((t) => {
@@ -55,7 +69,7 @@ export function formatTasks(tasks: StatusRow[]): string {
     return [
       s.task_id,
       s.status,
-      s.model ?? "—",
+      modelCell(t),
       formatUsd(s.cost_usd),
       String(s.minutes),
       t.owner_session_id.slice(0, 8),

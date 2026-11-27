@@ -263,7 +263,12 @@ program
   .description("Tasks of all sessions (read-only)")
   .option("-n, --limit <n>", "how many recent tasks", "50")
   .action((opts: { limit: string }) => {
-    console.log(formatTasks(listTasks(process.env, Number.parseInt(opts.limit, 10) || 50)));
+    try {
+      console.log(formatTasks(listTasks(process.env, Number.parseInt(opts.limit, 10) || 50)));
+    } catch (e) {
+      console.error(`pi-hub status: ${(e as Error).message}`);
+      process.exitCode = 1;
+    }
   });
 
 await program.parseAsync(process.argv);

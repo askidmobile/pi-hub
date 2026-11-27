@@ -19,7 +19,8 @@ import { FAILURES_WARN_AT, failuresInRow } from "./router.js";
 /**
  * `pi-hub doctor` (spec FR-031): config, provider key, pinned Pi version, worker extension,
  * Pi sees the default model (RPC `get_available_models`, no model call), price source of the
- * role models and the Stop hook (stage 2 FR-128), git, shim, daemon.
+ * role models and the Stop hook (stage 2 FR-128), role and chain models Pi does not list
+ * (stage 3 FR-201), smart router, Codex, git, shim, daemon.
  * The same checks are the last step of `pi-hub init`.
  */
 const run = promisify(execFile);
@@ -111,7 +112,10 @@ export async function runDoctor(
   if (ref && !piVersion.error && (!keyVar || keyValue)) {
     const probe = await probeModel(config, paths, ref, secrets.values, opts.probeTimeoutMs);
     checks.push(probe.check);
-    if (probe.models) checks.push(...priceSourceChecks(config, probe.models, paths.prices));
+    if (probe.models) {
+      checks.push(...roleModelChecks(config, probe.models, defaultModel));
+      checks.push(...priceSourceChecks(config, probe.models, paths.prices));
+    }
   }
 
   checks.push(...routerChecks(config, secrets.values, join(paths.logsDir, "router.log")));
@@ -168,9 +172,9 @@ async function probeModel(
   const env = allowlistedEnv();
   env.PI_CODING_AGENT_DIR = paths.piAgentDir;
   env.PI_OFFLINE = "1";
-  // Keys of every role provider, so the price check sees all role models.
-  for (const role of Object.values(config.roles)) {
-    const keyVar = providerKeyEnv(parseModelRef(role.model).provider);
+  // Keys of every role and chain provider, so the role and price checks see all models.
+  for (const model of roleModelRefs(config)) {
+    const keyVar = providerKeyEnv(parseModelRef(model).provider);
     const value = keyVar ? secrets[keyVar] : undefined;
     if (keyVar && value) env[keyVar] = value;
   }
@@ -219,6 +223,39 @@ async function probeModel(
   }
 }
 
+/** Role models and their escalation chains, each once, in table order. */
+export function roleModelRefs(config: Pick<HubConfig, "roles">): string[] {
+  return [...new Set(Object.values(config.roles).flatMap((r) => [r.model, ...(r.escalate ?? [])]))];
+}
+
+/**
+ * Stage 3 FR-201: every role model and chain model Pi does not list is a warning (the default
+ * model is already checked by the probe). A missing chain model would fail only at escalation.
+ */
+export function roleModelChecks(
+  config: Pick<HubConfig, "roles">,
+  models: PiModelInfo[],
+  checked?: string,
+): Check[] {
+  const name = "модели ролей";
+  const refs = roleModelRefs(config).filter((m) => m !== checked);
+  if (!refs.length) return [];
+  const missing = refs.filter((model) => {
+    const { provider, modelId } = parseModelRef(model);
+    return !models.some((m) => m.provider === provider && m.id === modelId);
+  });
+  if (!missing.length) return [ok(name, `Pi видит все: ${refs.join(", ")}`)];
+  return missing.map((model) => {
+    const roles = Object.entries(config.roles)
+      .filter(([, r]) => r.model === model || r.escalate?.includes(model))
+      .map(([n, r]) => (r.model === model ? n : `${n} (эскалация)`));
+    return warn(
+      name,
+      `${model} нет среди моделей Pi: роль ${roles.join(", ")}; проверьте имя и ключ`,
+    );
+  });
+}
+
 /**
  * Where the cost of each role model will come from (stage 2 FR-128, FR-116). Whether the
  * provider reports cost is known only per response, so a catalog price covers both.
@@ -230,8 +267,7 @@ export function priceSourceChecks(
 ): Check[] {
   const book = new PriceBook(pricesFile);
   const name = "цена модели";
-  const refs = [...new Set(Object.values(config.roles).map((r) => r.model))];
-  return refs.map((model) => {
+  return roleModelRefs(config).map((model) => {
     const { provider, modelId } = parseModelRef(model);
     if (book.lookup(provider, modelId)) return ok(name, `${model}: ручная цена (prices.yaml)`);
     const info = models.find((m) => m.provider === provider && m.id === modelId);

@@ -8,6 +8,27 @@ pi:
   bin: pi
   # Provider extensions loaded into workers besides the pi-hub one (workers still run with -ne).
   # extensions: [~/.pi/agent/extensions/9router.ts]
+# Roles (stage 3 FR-201): model = <pi provider>/<model id>; escalate = models tried in order
+# after a FAIL that survives the auto round (ADR-0013); description = one line for the
+# smart router. Order below is the author's pick after benchmarks/results/2026-11-27.md.
+roles:
+  code:
+    model: 9router/Deepseek-v4.1-flash
+    description: writing or changing code and its tests
+    escalate: [9router/Inkling-2-small, 9router/Hy4-flash]
+  docs:
+    model: 9router/Deepseek-v4.1-flash
+    description: "documentation only: README and docs, no code"
+default_role: code
+# Smart router (ADR-0008): picks a role via System One when the senior gave neither role nor
+# model. Needs smart: true, system_one and at least two roles. Key only in ~/.pi-hub/.env.
+router:
+  smart: false
+  # system_one:
+  #   preset: 9router            # fills url, api_key_env (NINEROUTER_API_KEY), model
+  #   model: typesafe/jev-latest
+  #   min_confidence: 0.75       # below: default_role
+  #   timeout_ms: 3000           # on timeout or error: default_role, reason system_one_unavailable
 transport:
   unix_socket: ~/.pi-hub/hub.sock
   # http: { host: 127.0.0.1, port: 7433 }   # remote: only via SSH tunnel / VPN

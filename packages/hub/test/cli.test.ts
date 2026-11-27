@@ -244,6 +244,7 @@ describe("pi-hub status", () => {
     migrate(db);
     const repos = new Repos(db);
     const project = repos.upsertProject(tmp.path, null);
+    const ids: string[] = [];
     for (const client of ["claude-code", "codex"] as const) {
       const s = repos.createSession({
         client,
@@ -251,7 +252,7 @@ describe("pi-hub status", () => {
         project_id: project.id,
         mode: "on",
       });
-      repos.insertTask({
+      const t = repos.insertTask({
         owner_session_id: s.id,
         project_id: project.id,
         task_text: `task from ${client}`,
@@ -261,12 +262,22 @@ describe("pi-hub status", () => {
         routed_by: "rules",
         route_reason: "default role",
       });
+      ids.push(t.id);
     }
+    // FR-230: the codex task escalated twice, the claude-code task ran one model
+    const [plain, escalated] = ids as [string, string];
+    repos.startModelRun(plain, { model: "fake/success", routed_by: "rules" });
+    repos.startModelRun(escalated, { model: "fake/success", routed_by: "rules" });
+    repos.startModelRun(escalated, { model: "fake/next", routed_by: "escalation" });
+    repos.startModelRun(escalated, { model: "fake/last", routed_by: "escalation" });
     db.close();
     const tasks = listTasks(env);
     expect(tasks).toHaveLength(2);
     const table = formatTasks(tasks);
     expect(table).toContain("task from claude-code");
     expect(table).toContain("task from codex");
+    expect(table).toMatch(/fake\/last ↑↑\s/);
+    expect(table).toMatch(/fake\/success\s/);
+    expect(table).not.toContain("fake/success ↑");
   });
 });
