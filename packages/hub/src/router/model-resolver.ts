@@ -3,7 +3,7 @@ import type { HubConfig } from "../config/schema.js";
 
 /**
  * Stage 1 model selection (spec FR-009, D-002): explicit model -> role table -> default_role.
- * No fallback, escalation or System One yet (stage 3).
+ * System One is layered on top by `RoleRouter`, escalation by `escalation.ts` (stage 3).
  */
 export interface ModelChoice {
   provider: string;
@@ -11,7 +11,7 @@ export interface ModelChoice {
   /** `<provider>/<model id>` as stored in tasks.model. */
   ref: string;
   role: string | null;
-  routedBy: Extract<RoutedBy, "architect" | "rules">;
+  routedBy: Extract<RoutedBy, "architect" | "rules" | "system_one">;
   reason: string;
 }
 

@@ -197,12 +197,16 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 - deviated: `usage_report` проверяет режим и в сервисе, не только в фасаде (принцип 2); `scope=project` без проекта у сессии — понятная ошибка. В скилах Claude Code и Codex — строка про `usage_report`; в скиле Claude Code ещё правило про эскалацию (фаза 2). Роль без указания при умном роутере — фаза 4, остальные правила Codex — фаза 5.
 
 ### Phase 4: Умный роутер (estimate: 6 h)
-- [ ] `SystemOneAdapter` (диалект `systemone`) с контрактными тестами на фикстурах фазы 0 (FR-220, FR-221)
-- [ ] `RoleRouter` в `TaskService.start`, шаг роутера в учёте (FR-220, FR-222)
-- [ ] `init`: шаг умного роутера + флаги; `pi-hub router status|test|off`; `doctor` (FR-223, FR-224)
-- [ ] Тесты: роль при уверенности ≥ порога, `default_role` ниже порога, таймаут/400/мусор → правила с `system_one_unavailable`, одна роль → без запроса, `role`/`model` → без запроса, шаг роутера с фактической моделью
+- [x] `SystemOneAdapter` (диалект `systemone`) с контрактными тестами на фикстурах фазы 0 (FR-220, FR-221)
+- [x] `RoleRouter` в `TaskService.start`, шаг роутера в учёте (FR-220, FR-222)
+- [x] `init`: шаг умного роутера + флаги; `pi-hub router status|test|off`; `doctor` (FR-223, FR-224)
+- [x] Тесты: роль при уверенности ≥ порога, `default_role` ниже порога, таймаут/400/мусор → правила с `system_one_unavailable`, одна роль → без запроса, `role`/`model` → без запроса, шаг роутера с фактической моделью
 - [ ] Живая проверка: `pi-hub router test` и `start` без роли на 9router (ключ пользователь кладёт в `~/.pi-hub/.env`)
 - **Independent check:** модульные и контрактные тесты роутера зелёные; `router test` отвечает.
+- deviated: роутер — `RoleRouter` поверх `resolveModel`; при `start` без роли и модели он спрашивает System One только если включён `router.smart`, задан `system_one` и ролей ≥ 2. Ниже порога — `default_role` с причиной «system_one: <роль> с уверенностью X < порог»; без ключа, при таймауте, HTTP-ошибке, мусоре или роли не из таблицы — `system_one_unavailable: <причина>`.
+- deviated: решения роутера пишутся строкой в `logs/router.log` — по нему `doctor` и `router status` считают сбои подряд; провайдер шага роутера — id пресета (`9router/jev-1.14.0` в отчёте).
+- deviated: `init` меняет только блок `router` в существующем `config.yaml` (Document API `yaml`, комментарии сохраняются); `router off` оставляет настройки `system_one`. Конфиг демон читает при старте — после изменения печатается подсказка о перезапуске хаба. Флаг `--router-url` добавлен для своего адреса.
+- deviated: диалект `cloudflare-run` адаптер не поддерживает — такие пресеты не предлагаются в `init`.
 
 ### Phase 5: Codex (estimate: 6 h)
 - [ ] `cli/codex-profile.ts`: блок между метками, `.bak`, проверка TOML, поиск доверия (FR-207, FR-208, D-216)
@@ -243,11 +247,11 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | FR-210 | 5 | `doctor` Codex |
 | FR-211 | 6 | эталонные задачи |
 | FR-212 | 6 | `scripts/bench.ts` |
-| FR-220 | 4 | `RoleRouter`, адаптер |
-| FR-221 | 1, 4 | пресеты — 🔶 данные и конфиг (фаза 1) |
-| FR-222 | 4 | шаг роутера в учёте |
-| FR-223 | 4 | `init` роутер |
-| FR-224 | 4 | `router status/test/off`, `doctor` |
+| FR-220 | 4 | `RoleRouter`, адаптер — ✅ |
+| FR-221 | 1, 4 | пресеты — ✅ |
+| FR-222 | 4 | шаг роутера в учёте — ✅ |
+| FR-223 | 4 | `init` роутер — ✅ |
+| FR-224 | 4 | `router status/test/off`, `doctor` — ✅ |
 | FR-225 | 3, 5 | скилы Claude Code и Codex — 🔶 `usage_report`, эскалация (фаза 3) |
 | FR-230 | 7 | `pi-hub status` |
 

@@ -89,6 +89,54 @@ export class Accounting {
     return total;
   }
 
+  /**
+   * The System One request of `start` as a router step (stage 3 FR-222, PD-206): the actual
+   * model from the answer; cost from the provider, else `prices.yaml`, else unknown.
+   */
+  recordRouterStep(
+    taskId: string,
+    provider: string,
+    r: {
+      model: string;
+      usage: { inputTokens: number; outputTokens: number; costUsd?: number };
+      latencyMs: number;
+    },
+  ): void {
+    const tokens = {
+      input: r.usage.inputTokens,
+      output: r.usage.outputTokens,
+      cacheRead: 0,
+      cacheWrite: 0,
+    };
+    const base: StepInput = {
+      task_id: taskId,
+      kind: "router",
+      model: r.model,
+      provider,
+      input_tokens: tokens.input,
+      output_tokens: tokens.output,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      cost: 0,
+      cost_source: "unknown",
+      latency_ms: r.latencyMs,
+    };
+    const fromProvider = (r.usage.costUsd ?? 0) > 0;
+    const price = fromProvider ? undefined : this.prices?.lookup(provider, r.model);
+    const step: StepInput = fromProvider
+      ? { ...base, cost: r.usage.costUsd as number, cost_source: "provider" }
+      : price
+        ? {
+            ...base,
+            cost: priceTokens(tokens, price),
+            cost_source: "tokens_x_price",
+            price_json: JSON.stringify(price),
+          }
+        : base;
+    this.repos.insertStep(step);
+    this.repos.updateTask(taskId, { cost_usd: this.repos.taskUsage(taskId).cost });
+  }
+
   usage(taskId: string): UsageTotals {
     return this.repos.taskUsage(taskId);
   }

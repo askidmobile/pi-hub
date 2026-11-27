@@ -17,6 +17,7 @@ import { expandHome, type HubPaths, resolveHubPaths } from "../config/paths.js";
 import { PINNED_PI_VERSION } from "../config/schema.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
 import { findInPath } from "./doctor.js";
+import { ROUTER_PRESETS, type RouterAnswers } from "./router.js";
 
 /**
  * `pi-hub init` (spec FR-030): creates ~/.pi-hub (config, `.env` 0600, Pi config dir for
@@ -75,7 +76,7 @@ export function renderConfig(answers: InitAnswers): string {
   return [
     "# pi-hub config, written by `pi-hub init`. Reference: config/hub.example.yaml.",
     "# model = <pi provider>/<model id> as in Pi's catalog. Provider keys live in .env.",
-    "# The smart router (System One) is configured in stage 3.",
+    "# Smart router (System One): pi-hub init --router-preset 9router, or pi-hub router status.",
     "# Per-task ceilings are off: add limits.max_task_usd / max_task_minutes to stop runaway workers.",
     stringify(config),
   ].join("\n");
@@ -233,6 +234,51 @@ export async function askAnswers(env: NodeJS.ProcessEnv = process.env): Promise<
     default: process.cwd(),
   });
   return { model, apiKey, allowedRepos: splitRepos(repos), extensions };
+}
+
+/**
+ * The smart router step (stage 3 FR-223): none / a preset / a custom URL, the model and the
+ * name of the key variable. The key itself goes to `~/.pi-hub/.env` by the user.
+ */
+export async function askRouter(): Promise<RouterAnswers> {
+  const { input, select } = await import("@inquirer/prompts");
+  const id = await select({
+    message: "Умный роутер (System One) выбирает роль задачи, если старший её не указал",
+    choices: [
+      { name: "не использовать", value: "" },
+      ...ROUTER_PRESETS.filter((p) => p.id !== "custom").map((p) => ({
+        name: p.label,
+        value: p.id,
+      })),
+      { name: "свой адрес System One", value: "custom" },
+    ],
+  });
+  if (!id) return { smart: false };
+  const preset = ROUTER_PRESETS.find((p) => p.id === id);
+  const url =
+    id === "custom"
+      ? await input({
+          message: "Адрес System One (POST {model, state, questions})",
+          validate: (v) => /^https?:\/\/\S+$/.test(v) || "нужен http(s)-адрес",
+        })
+      : undefined;
+  const model = await input({
+    message: "Модель System One",
+    default: preset?.defaultModel ?? preset?.models[0] ?? "",
+    required: true,
+  });
+  const keyEnv = await input({
+    message: "Имя переменной ключа в ~/.pi-hub/.env (пусто — ключ не нужен)",
+    default: preset?.apiKeyEnv ?? "",
+    validate: (v) => !v || /^[A-Za-z_][A-Za-z0-9_]*$/.test(v) || "имя переменной окружения",
+  });
+  return {
+    smart: true,
+    preset: id,
+    ...(url ? { url } : {}),
+    model,
+    ...(keyEnv ? { api_key_env: keyEnv } : {}),
+  };
 }
 
 export function splitRepos(raw: string): string[] {

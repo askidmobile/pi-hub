@@ -13,6 +13,7 @@ import { allowlistedEnv } from "../pi-rpc/launcher.js";
 import { type PiModelInfo, PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
 import { parseModelRef } from "../router/model-resolver.js";
+import { FAILURES_WARN_AT, failuresInRow } from "./router.js";
 
 /**
  * `pi-hub doctor` (spec FR-031): config, provider key, pinned Pi version, worker extension,
@@ -111,6 +112,8 @@ export async function runDoctor(
     checks.push(probe.check);
     if (probe.models) checks.push(...priceSourceChecks(config, probe.models, paths.prices));
   }
+
+  checks.push(...routerChecks(config, secrets.values, join(paths.logsDir, "router.log")));
 
   try {
     const { stdout } = await run("git", ["--version"], { timeout: 5_000 });
@@ -239,6 +242,41 @@ export function priceSourceChecks(
         `задайте цену в ${pricesFile}`,
     );
   });
+}
+
+/**
+ * Smart router (stage 3 FR-224): off / on; warns about a missing key, fewer than two roles,
+ * roles without descriptions and 3+ System One failures in a row.
+ */
+export function routerChecks(
+  config: HubConfig,
+  secrets: Readonly<Record<string, string>>,
+  routerLog: string,
+): Check[] {
+  const s1 = config.router.system_one;
+  if (!s1) return [ok("умный роутер", "не настроен (роль — от старшего или default_role)")];
+  if (!config.router.smart) return [ok("умный роутер", `выключен (${s1.preset} · ${s1.model})`)];
+  const out: Check[] = [];
+  if (s1.api_key_env && !secrets[s1.api_key_env]) {
+    out.push(
+      warn("умный роутер", `${s1.api_key_env} не задан в ~/.pi-hub/.env: роль — по правилам`),
+    );
+  } else {
+    out.push(ok("умный роутер", `${s1.preset} · ${s1.model}`));
+  }
+  const roles = Object.entries(config.roles);
+  if (roles.length < 2) {
+    out.push(warn("умный роутер", "в таблице одна роль: System One не вызывается"));
+  }
+  const bare = roles.filter(([, r]) => !r.description).map(([n]) => n);
+  if (roles.length >= 2 && bare.length) {
+    out.push(warn("умный роутер", `роли без описания (description): ${bare.join(", ")}`));
+  }
+  const failures = failuresInRow(routerLog);
+  if (failures >= FAILURES_WARN_AT) {
+    out.push(warn("умный роутер", `${failures} сбоев System One подряд: ${routerLog}`));
+  }
+  return out;
 }
 
 export const HOOK_BUDGET_MS = 100;

@@ -6,6 +6,7 @@ import { defaultExtensionPath } from "../src/assets.js";
 import { resolveHubPaths } from "../src/config/paths.js";
 import { HubConfig } from "../src/config/schema.js";
 import { createLogger } from "../src/log.js";
+import type { RoleRouter } from "../src/router/role-router.js";
 import { SessionRegistry } from "../src/sessions/session-registry.js";
 import { migrate, openDatabase } from "../src/storage/db.js";
 import { Repos } from "../src/storage/repos.js";
@@ -41,7 +42,9 @@ export function makeHarness(
     /** Manual prices for accounting (`prices.yaml`). */
     prices?: PriceLookup;
     /** Role table (default: `code` on fake/success). */
-    roles?: Record<string, { model: string; escalate?: string[] }>;
+    roles?: HubConfig["roles"];
+    /** Role router (stage 3); default: rules from the config. */
+    router?: RoleRouter;
   } = {},
 ): Harness {
   const home = join(root, "h");
@@ -71,6 +74,7 @@ export function makeHarness(
     wm: new WorkspaceManager(paths.worktreesDir, new GitLock()),
     accounting: new Accounting(repos, opts.prices),
     logger,
+    ...(opts.router ? { router: opts.router } : {}),
     pi: { bin: process.execPath, binArgs: [FAKE_WORKER], extensionPath: defaultExtensionPath() },
     timing: {
       ...(opts.noLimits ? {} : { timeLimitMs: opts.timeLimitMs ?? 20_000 }),

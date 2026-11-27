@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   type OpenQuestion,
   type ResultEnvelope,
@@ -12,7 +12,9 @@ import {
 import { HubError } from "../errors.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
 import { QualityGate } from "../quality/quality-gate.js";
-import { ModelSelectionError, resolveModel } from "../router/model-resolver.js";
+import { ModelSelectionError } from "../router/model-resolver.js";
+import { RoleRouter, type RouteResult, UNAVAILABLE } from "../router/role-router.js";
+import { HttpSystemOne } from "../router/system-one/adapter.js";
 import type { TaskPatch, TaskRow } from "../storage/repos.js";
 import { gitTopLevel } from "../workspaces/repo.js";
 import { buildEnvelope, costLine, summaryRow } from "./envelope.js";
@@ -74,6 +76,8 @@ export const MERGED_BRANCH_WARNING = "ветка уже слита: новые �
 export type TaskServiceDeps = Omit<RunnerDeps, "transition" | "quality"> & {
   /** One gate per hub: it holds the per-project lock (FR-114). */
   quality?: QualityGate;
+  /** Role selection; default: rules plus System One from config (stage 3 FR-220). */
+  router?: RoleRouter;
 };
 
 export interface TaskServiceEvents {
@@ -90,10 +94,12 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
   private closed = false;
 
   private readonly quality: QualityGate;
+  private readonly router: RoleRouter;
 
   constructor(private readonly deps: TaskServiceDeps) {
     super();
     this.setMaxListeners(0);
+    this.router = deps.router ?? defaultRouter(deps.config, deps.secrets);
     this.quality =
       deps.quality ??
       new QualityGate({
@@ -146,13 +152,14 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     if (!(await this.deps.wm.resolveCommit(repoRoot, input.base_branch))) {
       throw new HubError("base_not_found", `ветка ${input.base_branch} не найдена в ${repoRoot}`);
     }
-    let choice: ReturnType<typeof resolveModel>;
+    let routed: RouteResult;
     try {
-      choice = resolveModel({ model: input.model, role: input.role }, this.deps.config);
+      routed = await this.router.route({ task: input.task, model: input.model, role: input.role });
     } catch (e) {
       if (e instanceof ModelSelectionError) throw new HubError("model", e.message);
       throw e;
     }
+    const choice = routed.choice;
     const keyVar = providerKeyEnv(choice.provider);
     if (keyVar && !this.deps.secrets[keyVar]) {
       throw new HubError(
@@ -174,6 +181,7 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     });
     if (warnings.length)
       this.deps.repos.updateTask(task.id, { warnings_json: JSON.stringify(warnings) });
+    if (this.router.smart && !input.model && !input.role) this.logRoute(task.id, routed);
     this.deps.logger.info(
       { task_id: task.id, senior_session_id: sessionId, model: choice.ref },
       "task created",
@@ -191,6 +199,39 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       counts.set(q.task_id, (counts.get(q.task_id) ?? 0) + 1);
     }
     return [...counts].map(([task_id, count]) => ({ task_id, count }));
+  }
+
+  /**
+   * A System One decision: a router step of the task (FR-222, PD-206) and a line in
+   * `logs/router.log` (doctor counts failures in a row, FR-224).
+   */
+  private logRoute(taskId: string, routed: RouteResult): void {
+    if (routed.request) {
+      this.deps.accounting.recordRouterStep(taskId, this.router.provider, routed.request);
+    }
+    const ok = !routed.choice.reason.startsWith(UNAVAILABLE);
+    try {
+      mkdirSync(this.deps.paths.logsDir, { recursive: true });
+      appendFileSync(
+        join(this.deps.paths.logsDir, "router.log"),
+        `${JSON.stringify({
+          time: new Date().toISOString(),
+          task_id: taskId,
+          ok,
+          role: routed.choice.role,
+          model: routed.request?.model,
+          latency_ms: routed.request?.latencyMs,
+          reason: routed.choice.reason,
+        })}\n`,
+      );
+    } catch {
+      // the router log must never break start
+    }
+    if (!ok)
+      this.deps.logger.warn(
+        { task_id: taskId, reason: routed.choice.reason },
+        "system one unavailable",
+      );
   }
 
   /** Spending of the session, its project or all tasks over a period (stage 3 FR-206). */
@@ -449,6 +490,18 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     }
     return task;
   }
+}
+
+/** Rules plus System One when the smart router is configured. */
+export function defaultRouter(
+  config: TaskServiceDeps["config"],
+  secrets: Readonly<Record<string, string>>,
+): RoleRouter {
+  const s1 = config.router.system_one;
+  const adapter = s1
+    ? new HttpSystemOne(s1, s1.api_key_env ? secrets[s1.api_key_env] : undefined)
+    : null;
+  return new RoleRouter(config, adapter);
 }
 
 export function pidAlive(pid: number): boolean {
