@@ -42,6 +42,36 @@ function ok(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
+export const MAX_PENDING_LINE_BYTES = 300;
+
+/**
+ * «ожидают ответа: t_0142 (1 вопрос) — ответьте через send» (stage 2 FR-107), at most 300 bytes;
+ * null without open questions.
+ */
+export function pendingLine(pending: { task_id: string; count: number }[]): string | null {
+  if (!pending.length) return null;
+  const word = (n: number) =>
+    n % 10 === 1 && n % 100 !== 11
+      ? "вопрос"
+      : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)
+        ? "вопроса"
+        : "вопросов";
+  const head = "ожидают ответа: ";
+  const tail = " — ответьте через send";
+  const parts: string[] = [];
+  for (const [i, p] of pending.entries()) {
+    const part = `${p.task_id} (${p.count} ${word(p.count)})`;
+    const more = pending.length - i - 1;
+    const candidate = [...parts, part].join(", ");
+    const suffix = more ? ` и ещё ${more}` : "";
+    if (Buffer.byteLength(head + candidate + suffix + tail) > MAX_PENDING_LINE_BYTES) {
+      return `${head}${parts.join(", ")} и ещё ${pending.length - i}${tail}`;
+    }
+    parts.push(part);
+  }
+  return head + parts.join(", ") + tail;
+}
+
 function fail(message: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
@@ -76,13 +106,19 @@ export function createSessionServer(
         );
       }
       try {
-        return ok(await fn(args, extra));
+        return withPending(ok(await fn(args, extra)));
       } catch (e) {
         if (e instanceof HubError) return fail(e.message);
         log.error({ err: e, tool: name }, "tool failed");
         return fail(`внутренняя ошибка pi-hub: ${(e as Error).message}`);
       }
     };
+
+  /** Every tool response of the session carries the open questions line (FR-107). */
+  const withPending = (r: CallToolResult): CallToolResult => {
+    const line = pendingLine(deps.service.pendingQuestions(sessionId));
+    return line ? { ...r, content: [...r.content, { type: "text", text: line }] } : r;
+  };
 
   const applyMode = (m: "on" | "off") => {
     if (rule.tool_list !== "dynamic") return;
@@ -103,14 +139,16 @@ export function createSessionServer(
         .filter((t) => ACTIVE_STATUSES.has(t.status))
         .map((t) => t.task_id);
       log.info({ mode: m }, "architect mode changed");
-      return ok(
-        m === "off" && running.length
-          ? {
-              mode: m,
-              running_tasks: running,
-              note: "new tasks are refused; running tasks continue (cancel to stop)",
-            }
-          : { mode: m, running_tasks: running },
+      return withPending(
+        ok(
+          m === "off" && running.length
+            ? {
+                mode: m,
+                running_tasks: running,
+                note: "new tasks are refused; running tasks continue (cancel to stop)",
+              }
+            : { mode: m, running_tasks: running },
+        ),
       );
     },
   );
@@ -197,9 +235,11 @@ export async function waitWithProgress(
   }
   try {
     const res = await service.waitFor(sessionId, args.task_id, capSec * 1000);
-    return ACTIVE_STATUSES.has(res.status)
-      ? { ...res, hint: "still running: call wait again" }
-      : res;
+    if (ACTIVE_STATUSES.has(res.status)) return { ...res, hint: "still running: call wait again" };
+    if (res.status === "needs_input") {
+      return { ...res, hint: "the worker waits: answer with send(task_id, answer)" };
+    }
+    return res;
   } finally {
     clearInterval(ticker);
   }

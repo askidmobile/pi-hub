@@ -1,6 +1,12 @@
 import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import net from "node:net";
-import { HelloSchema, isCompatible, PROTOCOL_VERSION } from "@pi-hub/protocol";
+import {
+  HelloSchema,
+  type HookQuery,
+  HookQuerySchema,
+  isCompatible,
+  PROTOCOL_VERSION,
+} from "@pi-hub/protocol";
 import type { z } from "zod";
 
 export type HelloMessage = z.infer<typeof HelloSchema>;
@@ -11,12 +17,17 @@ import type { Logger } from "pino";
  * Local transport (ADR-0002, FR-001): unix socket with mode 0600. The first line of every
  * connection is a `Hello`; the hub answers `hello_ack` or `hello_reject`. After that the
  * socket carries MCP JSON-RPC lines unchanged (plan PD-006, PD-009).
+ * Stage 2: the first line may instead be a `hook_query` (Stop hook): one `hook_reply` line,
+ * then the connection is closed. The reply never waits longer than 50 ms (FR-110).
  */
 export type AcceptResult =
   | { ok: true; ack: Record<string, unknown>; onReady: (socket: net.Socket) => void }
   | { ok: false; reason: string; message: string };
 
 export type HelloHandler = (hello: HelloMessage) => Promise<AcceptResult>;
+export type HookHandler = (query: HookQuery) => Promise<{ block: boolean; reason?: string }>;
+
+export const HOOK_REPLY_BUDGET_MS = 50;
 
 const MAX_HELLO_BYTES = 64 * 1024;
 const HELLO_TIMEOUT_MS = 5_000;
@@ -25,9 +36,10 @@ export function listenUnix(
   socketPath: string,
   onHello: HelloHandler,
   logger: Logger,
+  onHook?: HookHandler,
 ): Promise<net.Server> {
   if (existsSync(socketPath)) unlinkSync(socketPath); // caller holds the daemon lock
-  const server = net.createServer((socket) => handle(socket, onHello, logger));
+  const server = net.createServer((socket) => handle(socket, onHello, logger, onHook));
   return new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(socketPath, () => {
@@ -42,7 +54,39 @@ function writeLine(socket: net.Socket, value: unknown): void {
   socket.write(`${JSON.stringify(value)}\n`);
 }
 
-function handle(socket: net.Socket, onHello: HelloHandler, logger: Logger): void {
+async function answerHook(
+  socket: net.Socket,
+  raw: unknown,
+  onHook: HookHandler | undefined,
+  logger: Logger,
+): Promise<void> {
+  const parsed = HookQuerySchema.safeParse(raw);
+  let reply: { block: boolean; reason?: string } = { block: false };
+  if (parsed.success && onHook && isCompatible(parsed.data.protocol_version, PROTOCOL_VERSION)) {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      reply = await Promise.race([
+        onHook(parsed.data),
+        new Promise<{ block: boolean }>((r) => {
+          timer = setTimeout(() => r({ block: false }), HOOK_REPLY_BUDGET_MS);
+        }),
+      ]);
+    } catch (e) {
+      logger.warn({ err: e }, "hook query failed");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  writeLine(socket, { type: "hook_reply", ...reply });
+  socket.end();
+}
+
+function handle(
+  socket: net.Socket,
+  onHello: HelloHandler,
+  logger: Logger,
+  onHook: HookHandler | undefined,
+): void {
   let buf = Buffer.alloc(0);
   const timer = setTimeout(() => socket.destroy(), HELLO_TIMEOUT_MS);
   const onData = (chunk: Buffer) => {
@@ -62,7 +106,12 @@ function handle(socket: net.Socket, onHello: HelloHandler, logger: Logger): void
   const accept = async (line: string, rest: Buffer) => {
     let hello: HelloMessage;
     try {
-      const parsed = HelloSchema.safeParse(JSON.parse(line));
+      const raw = JSON.parse(line) as { type?: unknown };
+      if (raw && typeof raw === "object" && raw.type === "hook_query") {
+        await answerHook(socket, raw, onHook, logger);
+        return;
+      }
+      const parsed = HelloSchema.safeParse(raw);
       if (!parsed.success) throw new Error(parsed.error.issues.map((i) => i.message).join("; "));
       hello = parsed.data;
     } catch (e) {

@@ -16,3 +16,8 @@ export function defaultExtensionPath(): string {
 export function workerPromptTemplatePath(): string {
   return join(piExtensionDir(), "src", "worker-prompt.md");
 }
+
+/** The Claude Code plugin of this repository (`plugins/claude-code`). */
+export function claudePluginDir(): string {
+  return join(piExtensionDir(), "..", "..", "plugins", "claude-code");
+}

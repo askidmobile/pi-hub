@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { join } from "node:path";
@@ -312,5 +312,162 @@ describe("shim autostart and stub", () => {
     } finally {
       await client.close();
     }
+  });
+});
+
+/** Runs `pi-hub-shim hook stop` like Claude Code does: hook JSON on stdin, decision on stdout. */
+function runHook(
+  home: string,
+  input: Record<string, unknown>,
+): Promise<{ code: number | null; stdout: string; ms: number }> {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [SHIM, "hook", "stop"], {
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", PI_HUB_HOME: home },
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    let stdout = "";
+    child.stdout.on("data", (b: Buffer) => {
+      stdout += b.toString("utf8");
+    });
+    child.on("close", (code) => resolve({ code, stdout, ms: Date.now() - started }));
+    child.stdin.end(JSON.stringify(input));
+  });
+}
+
+/** Stage 2 plan phase 5 independent check: a worker question reaches the senior three ways. */
+describe("worker questions over shim (stage 2)", () => {
+  let dir: ReturnType<typeof tempDir>;
+  let home: string;
+  let repo: string;
+  let hub: DaemonHandle | undefined;
+  const clients: Client[] = [];
+  beforeEach(async () => {
+    dir = tempDir();
+    home = join(dir.path, "h");
+    repo = join(dir.path, "repo");
+    mkdirSync(repo);
+    initRepo(repo);
+    writeConfig(home, repo);
+    hub = await startDaemon({ PI_HUB_HOME: home });
+  });
+  afterEach(async () => {
+    for (const c of clients.splice(0)) await c.close().catch(() => undefined);
+    await hub?.close();
+    dir.cleanup();
+  });
+
+  const startAsk = async (client: Client) => {
+    await client.callTool({ name: "architect_mode", arguments: { mode: "on" } });
+    const s = parse(
+      await client.callTool({
+        name: "start",
+        arguments: { task: "x", model: "fake/ask", repo, base_branch: "main" },
+      }),
+    );
+    let w = parse(
+      await client.callTool({ name: "wait", arguments: { task_id: s.task_id, timeout: 60 } }),
+    );
+    for (let i = 0; i < 5 && w.status !== "needs_input"; i++) {
+      w = parse(
+        await client.callTool({ name: "wait", arguments: { task_id: s.task_id, timeout: 60 } }),
+      );
+    }
+    return { taskId: s.task_id as string, w };
+  };
+  const pending = (r: Awaited<ReturnType<Client["callTool"]>>) =>
+    (r.content as { text: string }[]).slice(1).map((c) => c.text);
+
+  it("wait, the line in every response and the Stop hook (once); another session sees nothing", async () => {
+    const { client } = await connectClient(home, repo);
+    clients.push(client);
+    const { taskId, w } = await startAsk(client);
+    // 1. wait
+    expect(w).toMatchObject({
+      status: "needs_input",
+      question: {
+        round: 1,
+        question: "Which storage should sessions use?",
+        options: ["A: Redis", "B: database table"],
+      },
+      hint: "the worker waits: answer with send(task_id, answer)",
+    });
+    // 2. the line in any response
+    expect(pending(await client.callTool({ name: "status", arguments: {} }))).toEqual([
+      `ожидают ответа: ${taskId} (1 вопрос) — ответьте через send`,
+    ]);
+    // 3. the hook: not while Claude Code already continues, then once, then never again
+    expect((await runHook(home, { cwd: repo, stop_hook_active: true })).stdout).toBe("");
+    const blocked = await runHook(home, { cwd: repo, stop_hook_active: false });
+    expect(blocked.code).toBe(0);
+    const decision = JSON.parse(blocked.stdout);
+    expect(decision.decision).toBe("block");
+    expect(decision.reason).toContain(`${taskId}: Which storage should sessions use?`);
+    expect((await runHook(home, { cwd: repo, stop_hook_active: false })).stdout).toBe("");
+
+    // a second session of the same project does not see the question
+    const other = await connectClient(home, repo);
+    clients.push(other.client);
+    await other.client.callTool({ name: "architect_mode", arguments: { mode: "on" } });
+    expect(pending(await other.client.callTool({ name: "status", arguments: {} }))).toEqual([]);
+
+    expect(
+      parse(await client.callTool({ name: "send", arguments: { task_id: taskId, message: "B" } })),
+    ).toMatchObject({ status: "running" });
+    let done = parse(
+      await client.callTool({ name: "wait", arguments: { task_id: taskId, timeout: 60 } }),
+    );
+    for (let i = 0; i < 5 && done.status !== "done"; i++) {
+      done = parse(
+        await client.callTool({ name: "wait", arguments: { task_id: taskId, timeout: 60 } }),
+      );
+    }
+    expect(done.status).toBe("done");
+    expect(pending(await client.callTool({ name: "status", arguments: {} }))).toEqual([]);
+    const log = readFileSync(join(home, "logs", "hooks.log"), "utf8");
+    expect(log).toContain('"decision":"block"');
+    expect(log).toContain('"why":"stop_hook_active"');
+  });
+
+  it("the hook does not block with mode off, or when the hub is down, and stays fast (FR-110)", async () => {
+    const { client } = await connectClient(home, repo);
+    clients.push(client);
+    await startAsk(client);
+    await client.callTool({ name: "architect_mode", arguments: { mode: "off" } });
+    expect((await runHook(home, { cwd: repo })).stdout).toBe("");
+    await client.callTool({ name: "architect_mode", arguments: { mode: "on" } });
+
+    const times: number[] = [];
+    for (let i = 0; i < 20; i++) times.push((await runHook(home, { cwd: repo })).ms);
+    times.sort((a, b) => a - b);
+    // p95 of the whole process, Node start included
+    expect(times[18]).toBeLessThanOrEqual(100);
+
+    // the daemon waits for open connections on close: disconnect the senior first
+    await client.close();
+    clients.splice(0);
+    await hub?.close();
+    hub = undefined;
+    const down = await runHook(home, { cwd: repo });
+    expect(down).toMatchObject({ code: 0, stdout: "" });
+    expect(down.ms).toBeLessThanOrEqual(100);
+    expect(readFileSync(join(home, "logs", "hooks.log"), "utf8")).toContain('"source":"shim"');
+  });
+
+  it("an incompatible protocol version gets no block", async () => {
+    const reply = await new Promise<string>((resolve) => {
+      const s = net.connect(join(home, "hub.sock"));
+      let buf = "";
+      s.on("connect", () =>
+        s.write(
+          `${JSON.stringify({ type: "hook_query", protocol_version: "9.0.0", event: "stop", client: "claude-code", pid: process.pid, cwd: repo })}\n`,
+        ),
+      );
+      s.on("data", (b) => {
+        buf += b.toString();
+      });
+      s.on("close", () => resolve(buf.trim()));
+    });
+    expect(JSON.parse(reply)).toEqual({ type: "hook_reply", block: false });
   });
 });

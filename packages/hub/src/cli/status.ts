@@ -9,15 +9,26 @@ import { summaryRow } from "../tasks/envelope.js";
  * `pi-hub status` (spec FR-040): tasks of every session, for a human in a terminal.
  * Opens the database read-only: only the daemon writes it (AGENTS.md principle 5).
  */
-export function listTasks(env: NodeJS.ProcessEnv = process.env, limit = 50): TaskRow[] {
+/** A task with its open question, if any (stage 2 FR-130). */
+export type StatusRow = TaskRow & {
+  question_text?: string | null;
+  question_asked_at?: string | null;
+};
+
+export function listTasks(env: NodeJS.ProcessEnv = process.env, limit = 50): StatusRow[] {
   const { db: file } = resolveHubPaths(env);
   if (!existsSync(file)) return [];
   const db = new DatabaseSync(file, { readOnly: true });
   try {
     db.exec("PRAGMA busy_timeout = 2000");
     return db
-      .prepare("SELECT * FROM tasks ORDER BY created_at DESC, id DESC LIMIT ?")
-      .all(limit) as unknown as TaskRow[];
+      .prepare(
+        `SELECT t.*, q.text AS question_text, q.asked_at AS question_asked_at
+         FROM tasks t
+         LEFT JOIN questions q ON q.task_id = t.id AND q.answered_at IS NULL
+         ORDER BY t.created_at DESC, t.id DESC LIMIT ?`,
+      )
+      .all(limit) as unknown as StatusRow[];
   } finally {
     db.close();
   }
@@ -25,7 +36,18 @@ export function listTasks(env: NodeJS.ProcessEnv = process.env, limit = 50): Tas
 
 const COLUMNS = ["задача", "статус", "модель", "стоимость", "мин", "сессия", "текст"] as const;
 
-export function formatTasks(tasks: TaskRow[]): string {
+/** «? <question> · ждёт 12 мин» for a task in needs_input, at most 80 chars of question. */
+export function questionCell(t: StatusRow, now = Date.now()): string | null {
+  if (t.status !== "needs_input" || !t.question_text) return null;
+  const q = t.question_text.replace(/\s+/g, " ").trim();
+  const text = q.length > 80 ? `${q.slice(0, 79)}…` : q;
+  const minutes = t.question_asked_at
+    ? Math.max(0, Math.round((now - Date.parse(t.question_asked_at)) / 60_000))
+    : 0;
+  return `? ${text} · ждёт ${minutes < 1 ? "<1" : minutes} мин`;
+}
+
+export function formatTasks(tasks: StatusRow[]): string {
   if (!tasks.length) return "Задач нет.";
   const rows = tasks.map((t) => {
     const s = summaryRow(t);
@@ -37,7 +59,7 @@ export function formatTasks(tasks: TaskRow[]): string {
       formatUsd(s.cost_usd),
       String(s.minutes),
       t.owner_session_id.slice(0, 8),
-      text.length > 48 ? `${text.slice(0, 47)}…` : text,
+      questionCell(t) ?? (text.length > 48 ? `${text.slice(0, 47)}…` : text),
     ];
   });
   const widths = COLUMNS.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));

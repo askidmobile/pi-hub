@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pi-hub-shim hook stop",
+            "timeout": 2
+          }
+        ]
+      }
+    ]
+  }
+}

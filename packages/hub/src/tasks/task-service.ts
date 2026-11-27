@@ -177,6 +177,15 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
     return { task_id: task.id, status, model: choice.ref, route_reason: choice.reason, warnings };
   }
 
+  /** Open worker questions of the session's tasks, per task (stage 2 FR-107). */
+  pendingQuestions(sessionId: string): { task_id: string; count: number }[] {
+    const counts = new Map<string, number>();
+    for (const q of this.deps.repos.openQuestionsForSession(sessionId)) {
+      counts.set(q.task_id, (counts.get(q.task_id) ?? 0) + 1);
+    }
+    return [...counts].map(([task_id, count]) => ({ task_id, count }));
+  }
+
   status(sessionId: string): TaskSummaryRow[] {
     return this.deps.repos.listTasksByOwner(sessionId).map(summaryRow);
   }

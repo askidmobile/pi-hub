@@ -10,6 +10,7 @@ import {
   writeSync,
 } from "node:fs";
 import type net from "node:net";
+import { join } from "node:path";
 import type { Logger } from "pino";
 import { Accounting } from "./accounting/accounting.js";
 import { defaultExtensionPath } from "./assets.js";
@@ -19,6 +20,8 @@ import { PriceBook } from "./config/prices.js";
 import type { HubConfig } from "./config/schema.js";
 import { createSessionServer } from "./facade/mcp-facade.js";
 import { createLogger } from "./log.js";
+import { HookResolver } from "./sessions/hook-resolver.js";
+import { HookService } from "./sessions/hook-service.js";
 import { SessionRegistry } from "./sessions/session-registry.js";
 import { migrate, openDatabase } from "./storage/db.js";
 import { Repos } from "./storage/repos.js";
@@ -130,6 +133,12 @@ export async function startDaemon(env: NodeJS.ProcessEnv = process.env): Promise
     });
     const sessions = new SessionRegistry(repos, config);
     service.recover();
+    const connected = new Set<string>();
+    const hooks = new HookService(
+      repos,
+      new HookResolver(repos, (id) => connected.has(id)),
+      join(paths.logsDir, "hooks.log"),
+    );
 
     server = await listenUnix(
       paths.socket,
@@ -148,19 +157,22 @@ export async function startDaemon(env: NodeJS.ProcessEnv = process.env): Promise
           ok: true,
           ack: { senior_session_id: session.id, mode: session.mode },
           onReady: (socket) => {
+            connected.add(session.id);
             const mcp = createSessionServer(
               { service, sessions, config, logger },
               session.id,
               hello.client,
             );
             void mcp.connect(socketTransport(socket));
-            socket.on("close", () =>
-              logger.info({ senior_session_id: session.id }, "senior session disconnected"),
-            );
+            socket.on("close", () => {
+              connected.delete(session.id);
+              logger.info({ senior_session_id: session.id }, "senior session disconnected");
+            });
           },
         };
       },
       logger,
+      (query) => hooks.decide(query),
     );
     logger.info("pi-hub listening");
 

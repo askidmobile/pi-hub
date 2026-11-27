@@ -79,12 +79,12 @@ graph TD
 - [x] `workspaces/workspace-manager.ts` — общий запуск команды (`runCommand`) для `setup` и проверки; временный worktree базы (`createBaselineWorktree`/удаление); `diffNameStatus(base)`; `isMergedInto(branch, base)`.
 - [x] `accounting/accounting.ts` — цепочка источников (FR-116), `unknown`, цена на момент шага, итог по сессии с числом неизвестных шагов; `formatCostLine` с «цена неизвестна».
 - [x] `tasks/envelope.ts` — `quality.issues`, `quality.log_path`, `questions`, `attempt`; контроль 2 КБ.
-- [ ] `facade/mcp-facade.ts` — `start.clarify`; `wait` с вопросом; строка ожидающих вопросов, добавляемая ко всем ответам сессии (≤ 300 байт); новый текст `send`.
-- [ ] `sessions/hook-resolver.ts` (новый) — предки PID через `ps -o ppid= -p` (до 10 уровней, кэш на запрос), сопоставление с `parent_pid` сессий; запасной путь — единственная подключённая сессия Claude Code проекта по `cwd`.
-- [ ] `transport/unix-server.ts` — разбор первой строки: `hello` (как раньше) или `hook_query` → одна строка `HookReply` и закрытие соединения; бюджет ответа 50 мс.
-- [ ] `daemon.ts` — обработчик `hook_query`: режим сессии, открытый вопрос без `hook_delivered_at` → `block` с текстом, отметка доставки; лог в `logs/hooks.log`.
-- [ ] `cli/doctor.ts` — проверка хука (команда из `hooks.json` плагина есть в PATH, `pi-hub-shim hook stop` отвечает за ≤ 100 мс на пустом вводе); источник цены для моделей ролей.
-- [ ] `cli/status.ts` — для `needs_input` текст вопроса (80 символов) и время ожидания.
+- [x] `facade/mcp-facade.ts` — `start.clarify`; `wait` с вопросом; строка ожидающих вопросов, добавляемая ко всем ответам сессии (≤ 300 байт); новый текст `send`.
+- [x] `sessions/hook-resolver.ts` (новый) — предки PID через `ps -o ppid= -p` (до 10 уровней, кэш на запрос), сопоставление с `parent_pid` сессий; запасной путь — единственная подключённая сессия Claude Code проекта по `cwd`.
+- [x] `transport/unix-server.ts` — разбор первой строки: `hello` (как раньше) или `hook_query` → одна строка `HookReply` и закрытие соединения; бюджет ответа 50 мс.
+- [x] `daemon.ts` — обработчик `hook_query`: режим сессии, открытый вопрос без `hook_delivered_at` → `block` с текстом, отметка доставки; лог в `logs/hooks.log`.
+- [x] `cli/doctor.ts` — проверка хука (команда из `hooks.json` плагина есть в PATH, `pi-hub-shim hook stop` отвечает за ≤ 100 мс на пустом вводе); источник цены для моделей ролей.
+- [x] `cli/status.ts` — для `needs_input` текст вопроса (80 символов) и время ожидания.
 
 #### API / Commands:
 
@@ -144,8 +144,8 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 ### Shim (`packages/shim/src`)
 
-- [ ] `index.ts` — разбор подкоманды: `pi-hub-shim hook stop` уходит в `hook.ts`, иначе MCP-труба как раньше.
-- [ ] `hook.ts` (новый, ~60 строк) — читает JSON хука из stdin (`cwd`, `stop_hook_active`), шлёт `hook_query` в сокет с таймаутом 80 мс, печатает `{"decision":"block","reason":…}` при `block`; при любой ошибке — пустой вывод и код 0. Без зависимостей кроме `@pi-hub/protocol`.
+- [x] `index.ts` — разбор подкоманды: `pi-hub-shim hook stop` уходит в `hook.ts`, иначе MCP-труба как раньше.
+- [x] `hook.ts` (новый, ~60 строк) — читает JSON хука из stdin (`cwd`, `stop_hook_active`), шлёт `hook_query` в сокет с таймаутом 80 мс, печатает `{"decision":"block","reason":…}` при `block`; при любой ошибке — пустой вывод и код 0. Без зависимостей кроме `@pi-hub/protocol`.
 
 ### Pi extension (`packages/pi-extension/src`)
 
@@ -158,10 +158,10 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 
 ### Claude Code plugin (`plugins/claude-code`)
 
-- [ ] `hooks/hooks.json` — `Stop` → `pi-hub-shim hook stop`, таймаут 2 с (ответ shim — ≤ 100 мс).
-- [ ] `skills/architect/SKILL.md` — FR-126: вопросы, FAIL, не заканчивать ход с открытым вопросом, стоимость.
-- [ ] `commands/workers.md` — показывать вопросы задач.
-- [ ] `README.md` — вопросы, проверка качества, `.pi-hub.toml`, `prices.yaml`.
+- [x] `hooks/hooks.json` — `Stop` → `pi-hub-shim hook stop`, таймаут 2 с (ответ shim — ≤ 100 мс).
+- [x] `skills/architect/SKILL.md` — FR-126: вопросы, FAIL, не заканчивать ход с открытым вопросом, стоимость.
+- [x] `commands/workers.md` — показывать вопросы задач.
+- [x] `README.md` — вопросы, проверка качества, `.pi-hub.toml`, `prices.yaml`.
 
 ### Scripts and docs
 
@@ -237,13 +237,19 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 - **Independent check:** модульные тесты учёта; шаги фейкового воркера с нулевой стоимостью и ручной ценой дают `tokens_x_price`.
 
 ### Phase 5: Фасад, строка вопросов, хук Stop (estimate: 8 h)
-- [ ] Фасад: `start.clarify`, `wait` с вопросом, новый `send`, строка ожидающих вопросов во всех ответах (FR-103, FR-107)
-- [ ] `sessions/hook-resolver.ts` и запасной путь по проекту (FR-108, FR-122)
-- [ ] `unix-server.ts` + `daemon.ts`: `hook_query`, отметка доставки, `hooks.log` (FR-109, FR-110)
-- [ ] Shim: `pi-hub-shim hook stop` → `packages/shim/src/hook.ts`
-- [ ] Плагин: `hooks/hooks.json`, скил, `/workers`, README (FR-126)
-- [ ] `doctor` (хук) и `status` (вопросы) (FR-128, FR-130)
-- [ ] Тесты (MCP-клиент SDK → shim → демон, фейковый воркер): вопрос тремя путями — `wait`, строка в `status`, `hook stop` блокирует один раз и не блокирует повторно; вторая сессия того же проекта вопросов не видит; хук при остановленном демоне и при `off` — без блокировки; 20 вызовов хука, 95-й перцентиль ≤ 100 мс; запасной путь по проекту; несовместимая версия протокола
+- [x] Фасад: `start.clarify`, `wait` с вопросом, новый `send`, строка ожидающих вопросов во всех ответах (FR-103, FR-107)
+- [x] `sessions/hook-resolver.ts` и запасной путь по проекту (FR-108, FR-122)
+- [x] `unix-server.ts` + `daemon.ts`: `hook_query`, отметка доставки, `hooks.log` (FR-109, FR-110)
+- [x] Shim: `pi-hub-shim hook stop` → `packages/shim/src/hook.ts`
+- [x] Плагин: `hooks/hooks.json`, скил, `/workers`, README (FR-126)
+- [x] `doctor` (хук) и `status` (вопросы) (FR-128, FR-130)
+- [x] Тесты (MCP-клиент SDK → shim → демон, фейковый воркер): вопрос тремя путями — `wait`, строка в `status`, `hook stop` блокирует один раз и не блокирует повторно; вторая сессия того же проекта вопросов не видит; хук при остановленном демоне и при `off` — без блокировки; 20 вызовов хука, 95-й перцентиль ≤ 100 мс; запасной путь по проекту; несовместимая версия протокола
+- deviated: предки процесса — один вызов `ps -A -o pid=,ppid=` и обход таблицы в памяти, а не `ps -p` на каждый уровень: один процесс вместо десяти укладывается в бюджет 50 мс. Учитываются только сессии с живым соединением shim (демон держит множество подключённых сессий).
+- deviated: решение хука — отдельный `sessions/hook-service.ts` (режим, `stop_hook_active`, один блок на вопрос, `logs/hooks.log`), демон только связывает его с сервером; так оно проверяется без демона.
+- deviated: shim разделён на `index.ts` (выбор режима), `mcp.ts` (MCP-труба) и `hook.ts`; путь хука не грузит MCP SDK и zod (замер: голый Node 30 мс, с zod 50 мс, с SDK 80–110 мс) — для этого у `@pi-hub/protocol` появился вход `./version`. Хук без хаба отвечает за 30–40 мс; ошибки shim пишет сам в `logs/hooks.log`.
+- deviated: разведение двух сессий одного проекта по предкам проверено модульным тестом с подменённой таблицей процессов: в тестах shim MCP и хук — дети одного процесса vitest. Через настоящий shim проверены «вопрос тремя путями», отсутствие строки во второй сессии, `off`, остановленный хаб, p95 по 20 вызовам ≤ 100 мс и несовместимая версия.
+- deviated: `doctor` проверяет команду в `plugins/claude-code/hooks/hooks.json` и запуск `pi-hub-shim hook stop` (лучший из 3, ≤ 100 мс); `.js`-shim без бита исполнения запускается через `node`.
+- deviated: в `wait` на `needs_input` добавлена подсказка «answer with send(task_id, answer)».
 - **Independent check:** интеграционный тест «вопрос тремя путями» проходит через настоящий shim.
 
 ### Phase 6: Сквозная проверка и закрытие (estimate: 4 h)
@@ -261,14 +267,14 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 |-------------|-------|-------|
 | FR-101 ✅ | 2 | `pi-extension`: инструмент `ask` |
 | FR-102 ✅ | 2 | `tasks/questions.ts`, обработка `ui_request` в `WorkerRun` |
-| FR-103 🔶 | 2, 5 | `waitFor` с вопросом, фасад `wait` |
+| FR-103 ✅ | 2, 5 | `waitFor` с вопросом, фасад `wait` |
 | FR-104 ✅ | 2 | `TaskService.send` для `needs_input`, `respondUi` |
 | FR-105 ✅ | 1, 2 | `done → running`, `send` для `done` |
 | FR-106 ✅ | 2 | `recover()`, продолжение с «вопрос/ответ» |
-| FR-107 | 5 | строка ожидающих вопросов в фасаде |
-| FR-108 🔶 | 1, 5 | `HookQuery`, `hook-resolver.ts`, `unix-server.ts` |
-| FR-109 | 5 | `shim/hook.ts`, `hooks.json`, отметка доставки |
-| FR-110 | 5 | таймауты shim и сервера, `hooks.log` |
+| FR-107 ✅ | 5 | строка ожидающих вопросов в фасаде |
+| FR-108 ✅ | 1, 5 | `HookQuery`, `hook-resolver.ts`, `unix-server.ts` |
+| FR-109 ✅ | 5 | `shim/hook.ts`, `hooks.json`, отметка доставки |
+| FR-110 ✅ | 5 | таймауты shim и сервера, `hooks.log` |
 | FR-111 ✅ | 3 | `quality-gate.ts`: команды, окружение, таймаут |
 | FR-112 ✅ | 3 | вердикт, лог, `issues` |
 | FR-113 ✅ | 3 | авто-круг в `WorkerRun` |
@@ -280,14 +286,14 @@ steps: пересборка (CREATE steps_new … INSERT SELECT … DROP … REN
 | FR-119 ✅ | 3 | проверка базы, `quality_baselines` |
 | FR-120 ✅ | 2 | `detectTextQuestion` до `ensureSummary` |
 | FR-121 ✅ | 2, 3 | промпт, `detectTestTampering` |
-| FR-122 | 5 | запасной путь в `hook-resolver.ts` |
+| FR-122 ✅ | 5 | запасной путь в `hook-resolver.ts` |
 | FR-123 ✅ | 2, 3 | `isMergedInto`, предупреждение в `send` |
 | FR-125 ✅ | 2 | `clarify`, фаза `planning` |
-| FR-126 | 5 | скил архитектора |
+| FR-126 ✅ | 5 | скил архитектора |
 | FR-127 ✅ | 3 | конверт |
-| FR-128 🔶 | 4, 5 | `doctor`: цены и хук |
+| FR-128 ✅ | 4, 5 | `doctor`: цены и хук |
 | FR-129 ✅ | 2, 3 | сценарии фейкового воркера |
-| FR-130 | 5 | `pi-hub status` |
+| FR-130 ✅ | 5 | `pi-hub status` |
 
 ## Complexity & principle deviations
 

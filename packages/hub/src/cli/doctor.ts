@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import net from "node:net";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
-import { defaultExtensionPath } from "../assets.js";
+import { claudePluginDir, defaultExtensionPath } from "../assets.js";
 import { loadHub, loadSecrets } from "../config/load.js";
 import type { HubPaths } from "../config/paths.js";
 import { PriceBook } from "../config/prices.js";
@@ -17,7 +17,7 @@ import { parseModelRef } from "../router/model-resolver.js";
 /**
  * `pi-hub doctor` (spec FR-031): config, provider key, pinned Pi version, worker extension,
  * Pi sees the default model (RPC `get_available_models`, no model call), price source of the
- * role models (stage 2 FR-128), git, shim, daemon.
+ * role models and the Stop hook (stage 2 FR-128), git, shim, daemon.
  * The same checks are the last step of `pi-hub init`.
  */
 const run = promisify(execFile);
@@ -125,6 +125,7 @@ export async function runDoctor(
       ? ok("pi-hub-shim", shim)
       : warn("pi-hub-shim", "нет в PATH: выполните pnpm link --global в репозитории pi-hub"),
   );
+  checks.push(await hookCheck(env, shim));
 
   checks.push(
     (await socketAlive(paths.socket))
@@ -234,6 +235,75 @@ export function priceSourceChecks(
       `${model}: цена неизвестна, если провайдер не сообщит стоимость; ` +
         `задайте цену в ${pricesFile}`,
     );
+  });
+}
+
+export const HOOK_BUDGET_MS = 100;
+
+/**
+ * The Stop hook of the plugin (stage 2 FR-128): its command is the shim, and the shim answers
+ * an empty hook input within 100 ms with exit 0 and no output (best of 3 runs, cold start).
+ */
+export async function hookCheck(
+  env: NodeJS.ProcessEnv,
+  shim: string | undefined,
+  hooksFile = join(claudePluginDir(), "hooks", "hooks.json"),
+): Promise<Check> {
+  const name = "хук Stop";
+  let command: string | undefined;
+  try {
+    const cfg = JSON.parse(readFileSync(hooksFile, "utf8")) as {
+      hooks?: { Stop?: { hooks?: { command?: string }[] }[] };
+    };
+    command = cfg.hooks?.Stop?.[0]?.hooks?.[0]?.command;
+  } catch (e) {
+    return fail(name, `${hooksFile}: ${(e as Error).message}`);
+  }
+  if (command !== "pi-hub-shim hook stop") {
+    return fail(
+      name,
+      `в ${hooksFile} команда ${command ?? "не задана"}, нужна pi-hub-shim hook stop`,
+    );
+  }
+  if (!shim) return warn(name, "pi-hub-shim нет в PATH: хук не сработает");
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < 3; i++) {
+    const started = Date.now();
+    // A linked bin is a wrapper script; a bare dist/index.js may lack the exec bit.
+    const real = realpathSync(shim);
+    const r = real.endsWith(".js")
+      ? await runWithInput(process.execPath, [real, "hook", "stop"], "{}", env)
+      : await runWithInput(shim, ["hook", "stop"], "{}", env);
+    const ms = Date.now() - started;
+    if (r.code !== 0 || r.stdout.trim()) {
+      return fail(name, `pi-hub-shim hook stop: код ${r.code}, вывод ${r.stdout.trim() || "—"}`);
+    }
+    best = Math.min(best, ms);
+  }
+  return best <= HOOK_BUDGET_MS
+    ? ok(name, `отвечает за ${best} мс`)
+    : warn(name, `отвечает за ${best} мс, дольше ${HOOK_BUDGET_MS} мс`);
+}
+
+function runWithInput(
+  bin: string,
+  args: string[],
+  input: string,
+  env: NodeJS.ProcessEnv,
+): Promise<{ code: number | null; stdout: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, args, { env, stdio: ["pipe", "pipe", "ignore"] });
+    let stdout = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    child.stdout.on("data", (b: Buffer) => {
+      stdout += b.toString("utf8");
+    });
+    child.on("error", () => resolve({ code: null, stdout }));
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ code, stdout });
+    });
+    child.stdin.end(input);
   });
 }
 

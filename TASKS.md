@@ -20,7 +20,7 @@
 | T-006 | 2026-11-27 | TD-001: типизировать тесты (tsconfig.test.json, шаг в typecheck/CI) | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
 | T-007 | 2026-11-27 | TD-005: проверить автоподключение плагина через claude plugin в init | [`2026-11-26-stage-1-core.md`](docs/plans/2026-11-26-stage-1-core.md) | ✅ Done |
 | T-011 | 2026-11-27 | Спека этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/specs/2026-11-27-stage-2-questions-quality.md) | ✅ Done |
-| T-012 | 2026-11-27 | Реализация этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | 🔄 Фазы 0–4 из 6 |
+| T-012 | 2026-11-27 | Реализация этапа 2: вопросы и качество | [`2026-11-27-stage-2-questions-quality.md`](docs/plans/2026-11-27-stage-2-questions-quality.md) | 🔄 Фазы 0–5 из 6 |
 
 ## 📦 Backlog
 
