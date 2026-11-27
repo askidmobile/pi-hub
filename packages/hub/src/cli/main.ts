@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { loadHub } from "../config/load.js";
 import { AlreadyRunningError, startDaemon } from "../daemon.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
-import { inspectProfile, installProfile } from "./codex-profile.js";
+import { inspectProfile, installProfile, installSkill } from "./codex-profile.js";
 import { CODEX_TRUST_STEP, findInPath, formatChecks, hasFailures, runDoctor } from "./doctor.js";
 import {
   applyInit,
@@ -192,6 +192,13 @@ program
           console.log(
             `Профиль Codex ${p.path} — ${word}${p.backup ? ` (копия: ${p.backup})` : ""}.`,
           );
+          const skill = installSkill();
+          if (skill.action !== "kept") {
+            const verb = skill.action === "created" ? "установлен" : "обновлён";
+            console.log(
+              `Скил архитектора для Codex ${skill.path} — ${verb}${skill.backup ? ` (копия: ${skill.backup})` : ""}.`,
+            );
+          }
           if (!inspectProfile().trusted) console.log(`Разовый шаг: ${CODEX_TRUST_STEP}.`);
         } catch (e) {
           console.log(`Профиль Codex не изменён: ${(e as Error).message}`);

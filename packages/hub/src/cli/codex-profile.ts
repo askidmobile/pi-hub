@@ -7,8 +7,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse } from "smol-toml";
+import { codexPluginDir } from "../assets.js";
 
 /**
  * Codex architect profile (stage 3 FR-207, FR-208, FR-210; D-208, D-216; plan PD-201, PD-211).
@@ -122,6 +123,47 @@ export function installProfile(env: NodeJS.ProcessEnv = process.env): InstallRes
   copyFileSync(path, backup);
   writeFileSync(path, after);
   return { path, action: "updated", backup };
+}
+
+/** The pi-hub architect skill in Codex: its own folder, the user's skills stay untouched. */
+export const SKILL_DIR_NAME = "pi-hub-architect";
+
+export function skillPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(codexHome(env), "skills", SKILL_DIR_NAME, "SKILL.md");
+}
+
+/**
+ * `pi-hub init`: copies the architect skill of `plugins/codex` into
+ * `~/.codex/skills/pi-hub-architect/` (`.bak` before replacing a changed file). Without it
+ * Codex works by whatever other delegation skill it finds.
+ */
+export function installSkill(
+  env: NodeJS.ProcessEnv = process.env,
+  source = join(codexPluginDir(), "skills", "architect", "SKILL.md"),
+): InstallResult {
+  const path = skillPath(env);
+  const text = readFileSync(source, "utf8");
+  const before = existsSync(path) ? readFileSync(path, "utf8") : null;
+  if (before === text) return { path, action: "kept" };
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  if (before === null) {
+    writeFileSync(path, text);
+    return { path, action: "created" };
+  }
+  const backup = `${path}.bak`;
+  copyFileSync(path, backup);
+  writeFileSync(path, text);
+  return { path, action: "updated", backup };
+}
+
+/** `doctor`: the installed skill matches the one of this pi-hub. */
+export function skillState(
+  env: NodeJS.ProcessEnv = process.env,
+  source = join(codexPluginDir(), "skills", "architect", "SKILL.md"),
+): "missing" | "stale" | "ok" {
+  const path = skillPath(env);
+  if (!existsSync(path)) return "missing";
+  return readFileSync(path, "utf8") === readFileSync(source, "utf8") ? "ok" : "stale";
 }
 
 export interface ProfileState {

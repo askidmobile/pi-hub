@@ -7,9 +7,12 @@ import {
   END,
   inspectProfile,
   installProfile,
+  installSkill,
   ProfileError,
   profilePath,
   renderBlock,
+  skillPath,
+  skillState,
   upsertBlock,
 } from "../src/cli/codex-profile.js";
 import { codexChecks } from "../src/cli/doctor.js";
@@ -123,13 +126,33 @@ describe("Codex profile", () => {
     expect(codexChecks(env, "/usr/local/bin/codex")[0]).toMatchObject({ level: "warn" });
     installProfile(env);
     const untrusted = codexChecks(env, "/usr/local/bin/codex");
-    expect(untrusted.map((c) => c.level)).toEqual(["ok", "warn"]);
+    expect(untrusted.map((c) => [c.name, c.level])).toEqual([
+      ["Codex", "ok"],
+      ["хук Codex", "warn"],
+      ["скил Codex", "warn"],
+    ]);
     expect(untrusted[1]?.detail).toContain("/hooks");
     writeFileSync(file, `${readFileSync(file, "utf8")}\n${trust(0)}`);
-    expect(codexChecks(env, undefined)[1]).toEqual({
-      name: "хук Codex",
-      level: "ok",
-      detail: "доверен",
-    });
+    installSkill(env);
+    expect(codexChecks(env, undefined).slice(1)).toEqual([
+      { name: "хук Codex", level: "ok", detail: "доверен" },
+      { name: "скил Codex", level: "ok", detail: skillPath(env) },
+    ]);
+  });
+
+  it("installs the architect skill into its own folder; a changed copy is replaced with .bak", () => {
+    const path = skillPath(env);
+    expect(path).toBe(join(env.CODEX_HOME as string, "skills", "pi-hub-architect", "SKILL.md"));
+    expect(skillState(env)).toBe("missing");
+    expect(installSkill(env)).toEqual({ path, action: "created" });
+    const text = readFileSync(path, "utf8");
+    expect(text).toContain("name: pi-hub-architect");
+    expect(text).toContain("request_user_input");
+    expect(installSkill(env).action).toBe("kept");
+    writeFileSync(path, "old\n");
+    expect(skillState(env)).toBe("stale");
+    expect(installSkill(env)).toEqual({ path, action: "updated", backup: `${path}.bak` });
+    expect(readFileSync(`${path}.bak`, "utf8")).toBe("old\n");
+    expect(skillState(env)).toBe("ok");
   });
 });

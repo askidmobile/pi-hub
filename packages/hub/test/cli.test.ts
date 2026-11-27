@@ -111,6 +111,9 @@ describe("pi-hub init", () => {
     // with codex installed the profile lands in the temp CODEX_HOME (stage 3 FR-208)
     const profile = join(tmp.path, ".codex", "pi-hub.config.toml");
     expect(existsSync(profile)).toBe(!!findInPath("codex", env.PATH));
+    expect(existsSync(join(tmp.path, ".codex", "skills", "pi-hub-architect", "SKILL.md"))).toBe(
+      !!findInPath("codex", env.PATH),
+    );
     // Repeat run: config kept, questions skipped.
     const again = execFileSync(process.execPath, args, { env, encoding: "utf8" });
     expect(again).toContain("вопросы пропущены");

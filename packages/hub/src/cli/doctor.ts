@@ -13,7 +13,7 @@ import { allowlistedEnv } from "../pi-rpc/launcher.js";
 import { type PiModelInfo, PiRpcClient } from "../pi-rpc/pi-rpc-client.js";
 import { providerKeyEnv } from "../pi-rpc/provider-env.js";
 import { parseModelRef } from "../router/model-resolver.js";
-import { inspectProfile } from "./codex-profile.js";
+import { inspectProfile, skillPath, skillState } from "./codex-profile.js";
 import { FAILURES_WARN_AT, failuresInRow } from "./router.js";
 
 /**
@@ -310,6 +310,15 @@ export function codexChecks(
     out.push(fail("хук Codex", `команда без --client codex: ${p.hook.command}`));
   } else if (!p.trusted) out.push(warn("хук Codex", `не доверен: ${CODEX_TRUST_STEP}`));
   else out.push(ok("хук Codex", "доверен"));
+  const skill = skillState(env);
+  out.push(
+    skill === "ok"
+      ? ok("скил Codex", skillPath(env))
+      : warn(
+          "скил Codex",
+          `${skill === "missing" ? "не установлен" : "устарел"}: pi-hub init (${skillPath(env)})`,
+        ),
+  );
   return out;
 }
 

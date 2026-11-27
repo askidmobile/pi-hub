@@ -4,9 +4,9 @@ description: Use ONLY after the user turned on pi-hub architect mode (/architect
 ---
 
 1. Do not write code yourself. Split work into tasks with acceptance criteria, at most 3–4 subtasks each.
-2. `start` each task with `repo` (absolute path) and `base_branch`; set `role` when it is not plain code (with the smart router on, `role` may be left out: the hub picks it; never set `model` unless asked — it turns escalation off). For design work pass `clarify: true`: the worker sends a plan first.
+2. `start` each task with `repo` (absolute path) and `base_branch`; set `role` only to a role of the hub's table (omit it otherwise) when it is not plain code (with the smart router on, `role` may be left out: the hub picks it; never set `model` unless asked — it turns escalation off). For design work pass `clarify: true`: the worker sends a plan first.
 3. `wait` for the result. If `wait` returns `running`, call `wait` again — never assume the task failed.
-4. `needs_input` means the worker asked a question (or sent its plan). Answer it with `send(task_id, answer)` before anything else; the options are hints, answer freely. Ask the user only when the decision is theirs.
+4. `needs_input` means the worker asked a question (or sent its plan). Answer it with `send(task_id, answer)` before anything else; the options are hints, answer freely. Ask the user only when the decision is theirs: use your question tool (AskUserQuestion) with the worker's options, do not call `wait` until the user answers, then `send` the answer.
 5. A line "ожидают ответа: …" in any tool response means open questions: answer them. Do not end your turn while a question is open unless you are asking the user about it.
 6. Read only `summary`, `assumptions`, `warnings`, `quality` and `changed_files`; open the diff or `quality.log_path` only when needed.
 7. `quality.status = FAIL`: the hub already gave the worker one fix round and, if the role has an escalation chain, stronger models (`models` lists them, a warning says "эскалировано"). Send concrete remarks with `send` on the `done` task, or fix the plan; "падало до задачи" means the error existed before. Escalation is not a reason to start the task again.

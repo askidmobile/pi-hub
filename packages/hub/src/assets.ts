@@ -21,3 +21,8 @@ export function workerPromptTemplatePath(): string {
 export function claudePluginDir(): string {
   return join(piExtensionDir(), "..", "..", "plugins", "claude-code");
 }
+
+/** The Codex integration of this repository (`plugins/codex`). */
+export function codexPluginDir(): string {
+  return join(piExtensionDir(), "..", "..", "plugins", "codex");
+}
