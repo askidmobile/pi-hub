@@ -204,7 +204,14 @@ const routerCmd = program
 routerCmd
   .command("status", { isDefault: true })
   .description("Router config, key, roles, failures in a row")
-  .action(() => console.log(formatRouterStatus(routerState())));
+  .action(() => {
+    try {
+      console.log(formatRouterStatus(routerState()));
+    } catch (e) {
+      console.error(`pi-hub router status: ${(e as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
 routerCmd
   .command("test")
   .description("Send one test question and print model, latency, answer and cost")

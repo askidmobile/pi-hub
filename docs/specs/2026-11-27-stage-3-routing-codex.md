@@ -73,12 +73,12 @@ Codex работает архитектором наравне с Claude Code. �
 3. Хаб спрашивает System One, какая роль из таблицы подходит, и берёт её при уверенности не ниже порога.
 
 **Acceptance criteria (Given / When / Then):**
-- [ ] Given умный роутер включён и `start` без `role` и без `model`, when System One отвечает с уверенностью ≥ `min_confidence`, then задача получает эту роль и модель роли, `routed_by = system_one`, а в `route_reason` — роль и уверенность.
-- [ ] Given уверенность ниже `min_confidence`, then задача получает `default_role`, а `route_reason` называет уверенность и порог.
-- [ ] Given System One недоступен, ответ дольше `timeout_ms` (по умолчанию 3 с) или не прошёл проверку формата, then задача создаётся по правилам (`default_role`), `route_reason` содержит `system_one_unavailable`, `start` возвращается не позже чем через `timeout_ms` + 1 с.
-- [ ] Given `start` с `role` или `model`, then System One не вызывается.
-- [ ] Given запрос к System One выполнен, then он записан шагом задачи с фактической моделью из ответа (например, `jev-1.14.0` для `jev-latest`) и стоимостью по общей цепочке источников (этап 2, FR-116).
-- [ ] Given `pi-hub router test`, then хаб отправляет один тестовый вопрос и печатает модель, задержку, ответ и стоимость, если провайдер её вернул.
+- [x] Given умный роутер включён и `start` без `role` и без `model`, when System One отвечает с уверенностью ≥ `min_confidence`, then задача получает эту роль и модель роли, `routed_by = system_one`, а в `route_reason` — роль и уверенность.
+- [x] Given уверенность ниже `min_confidence`, then задача получает `default_role`, а `route_reason` называет уверенность и порог.
+- [x] Given System One недоступен, ответ дольше `timeout_ms` (по умолчанию 3 с) или не прошёл проверку формата, then задача создаётся по правилам (`default_role`), `route_reason` содержит `system_one_unavailable`, `start` возвращается не позже чем через `timeout_ms` + 1 с.
+- [x] Given `start` с `role` или `model`, then System One не вызывается.
+- [x] Given запрос к System One выполнен, then он записан шагом задачи с фактической моделью из ответа (например, `jev-1.14.0` для `jev-latest`) и стоимостью по общей цепочке источников (этап 2, FR-116).
+- [x] Given `pi-hub router test`, then хаб отправляет один тестовый вопрос и печатает модель, задержку, ответ и стоимость, если провайдер её вернул.
 
 ### Scenario 4: Отчёт о расходах (P1)
 **As** пользователь, **I want** спросить старшего «сколько потрачено на проект за неделю и на чём», **so that** понимать расходы по моделям и ролям.

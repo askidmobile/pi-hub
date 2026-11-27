@@ -315,10 +315,14 @@ async function main(): Promise<void> {
       check(!/^цена неизвестна/.test(String(w2.cost_line)), "the second task has a price");
     } else {
       step("start");
+      // --router: a task that is plainly code, so System One has no reason to pick docs
       const started = await call("start", {
-        task:
-          "Create a file hello.txt containing exactly the line `hello from pi-hub` and commit it. " +
-          "Do not change anything else.",
+        task: router
+          ? "Write a JavaScript function `greet()` in a new file greet.js that returns the " +
+            "string `hello from pi-hub`, and also create hello.txt containing exactly the line " +
+            "`hello from pi-hub`. Commit both files. Do not change anything else."
+          : "Create a file hello.txt containing exactly the line `hello from pi-hub` and commit it. " +
+            "Do not change anything else.",
         repo: repoRoot,
         base_branch: "main",
       });
