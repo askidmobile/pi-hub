@@ -79,7 +79,7 @@ describe("migrations", () => {
       `INSERT INTO steps (task_id, seq, model, provider, cost, cost_source, created_at)
        VALUES (?, 1, 'm', 'p', 0.25, 'pi_event', '2026-11-26T00:00:00Z')`,
     ).run(t.id);
-    expect(migrate(db)).toEqual([4]);
+    expect(migrate(db)).toEqual([4, 5]);
     const step = db.prepare("SELECT * FROM steps WHERE task_id = ?").get(t.id) as {
       cost: number;
       cost_source: string;
@@ -105,6 +105,59 @@ describe("migrations", () => {
           "INSERT INTO steps (task_id, seq, model, provider, cost_source, created_at) VALUES (?, 9, 'm', 'p', 'guess', 'x')",
         )
         .run(t.id),
+    ).toThrow();
+    db.close();
+  });
+
+  it("migrates a stage 2 database (schema 4): past tasks get one model run", () => {
+    const stage2 = join(dir.path, "m2");
+    mkdirSync(stage2);
+    for (const m of listMigrations().filter((x) => x.version <= 4))
+      writeFileSync(join(stage2, m.name), m.sql);
+    const db = openDatabase(join(dir.path, "hub.db"));
+    migrate(db, stage2);
+    const repos = new Repos(db);
+    const p = repos.upsertProject("/repo/a", null);
+    const s = repos.createSession({ client: "mcp", parent_pid: 1, project_id: p.id, mode: "on" });
+    const base = {
+      owner_session_id: s.id,
+      project_id: p.id,
+      task_text: "x",
+      base_branch: "main",
+      role: "code",
+      routed_by: "architect" as const,
+      route_reason: "model from the architect",
+    };
+    const done = repos.insertTask({ ...base, model: "9router/glm-5.3-flash" });
+    db.prepare(
+      "UPDATE tasks SET status = 'done', quality_status = 'PASS', started_at = ?, finished_at = ? WHERE id = ?",
+    ).run("2026-11-27T10:00:00Z", "2026-11-27T10:05:00Z", done.id);
+    const noModel = repos.insertTask({ ...base, model: null });
+    db.prepare(
+      `INSERT INTO steps (task_id, seq, model, provider, cost, cost_source, created_at)
+       VALUES (?, 1, 'glm-5.3-flash', '9router', 0.1, 'pi_event', '2026-11-27T10:01:00Z')`,
+    ).run(done.id);
+    expect(migrate(db)).toEqual([5]);
+    expect(repos.modelRuns(done.id)).toEqual([
+      {
+        task_id: done.id,
+        seq: 1,
+        model: "9router/glm-5.3-flash",
+        routed_by: "architect",
+        reason: "model from the architect",
+        started_at: "2026-11-27T10:00:00Z",
+        finished_at: "2026-11-27T10:05:00Z",
+        quality: "PASS",
+      },
+    ]);
+    expect(repos.modelRuns(noModel.id)).toEqual([]);
+    expect(repos.getTask(done.id)?.first_try_pass).toBe(null);
+    const step = db.prepare("SELECT kind FROM steps WHERE task_id = ?").get(done.id) as {
+      kind: string;
+    };
+    expect(step.kind).toBe("worker");
+    expect(() =>
+      db.prepare("UPDATE steps SET kind = 'other' WHERE task_id = ?").run(done.id),
     ).toThrow();
     db.close();
   });
@@ -217,6 +270,128 @@ describe("repos", () => {
       seq: number;
     }[];
     expect(seqs.map((s) => s.seq)).toEqual([1, 2]);
+  });
+
+  it("records model runs and the first-try flag (stage 3 FR-205)", () => {
+    const { project, session } = seed();
+    const t = repos.insertTask(newTask(session.id, project.id));
+    expect(
+      repos.startModelRun(t.id, { model: "a/x", routed_by: "rules", reason: "role code" }),
+    ).toBe(1);
+    repos.finishModelRun(t.id, 1, "FAIL");
+    expect(repos.startModelRun(t.id, { model: "a/y", routed_by: "escalation" })).toBe(2);
+    const runs = repos.modelRuns(t.id);
+    expect(runs.map((r) => [r.seq, r.model, r.routed_by, r.quality])).toEqual([
+      [1, "a/x", "rules", "FAIL"],
+      [2, "a/y", "escalation", null],
+    ]);
+    expect(runs[0]?.finished_at).toBeTruthy();
+    expect(runs[1]?.finished_at).toBe(null);
+    repos.setFirstTryPass(t.id, false);
+    expect(repos.getTask(t.id)?.first_try_pass).toBe(0);
+    repos.setFirstTryPass(t.id, null);
+    expect(repos.getTask(t.id)?.first_try_pass).toBe(null);
+  });
+
+  it("usage report queries filter by session, project and period (stage 3 FR-206)", () => {
+    const { project, session } = seed();
+    const other = repos.createSession({
+      client: "codex",
+      parent_pid: 1,
+      project_id: project.id,
+      mode: "on",
+    });
+    const p2 = repos.upsertProject("/repo/b", null);
+    const s2 = repos.createSession({ client: "mcp", parent_pid: 2, project_id: p2.id, mode: "on" });
+    const step = (taskId: string, model: string, cost: number, at: string, unknown = false) =>
+      db
+        .prepare(
+          `INSERT INTO steps (task_id, seq, model, provider, input_tokens, output_tokens,
+             cache_read_tokens, cost, cost_source, kind, created_at)
+           VALUES (?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM steps WHERE task_id = ?),
+             ?, '9router', 1000, 100, 400, ?, ?, 'worker', ?)`,
+        )
+        .run(taskId, taskId, model, cost, unknown ? "unknown" : "pi_event", at);
+    const task = (owner: string, proj: string, role: string, at: string) => {
+      const t = repos.insertTask({ ...newTask(owner, proj), role });
+      db.prepare("UPDATE tasks SET created_at = ? WHERE id = ?").run(at, t.id);
+      return t;
+    };
+    const old = "2026-11-01T00:00:00Z";
+    const recent = "2026-11-26T00:00:00Z";
+    // a: glm fails first, escalates to deepseek, PASS in the end
+    const a = task(session.id, project.id, "code", recent);
+    repos.startModelRun(a.id, { model: "9router/glm", routed_by: "rules" });
+    repos.finishModelRun(a.id, 1, "FAIL");
+    repos.startModelRun(a.id, { model: "9router/deepseek", routed_by: "escalation" });
+    repos.finishModelRun(a.id, 2, "PASS");
+    repos.updateTask(a.id, { quality_status: "PASS", cost_usd: 0.3, first_try_pass: 0 });
+    step(a.id, "glm", 0.1, recent);
+    step(a.id, "deepseek", 0.2, recent);
+    // b: glm, first-try PASS, other session of the same project
+    const b = task(other.id, project.id, "code", recent);
+    repos.startModelRun(b.id, { model: "9router/glm", routed_by: "rules" });
+    repos.updateTask(b.id, { quality_status: "PASS", cost_usd: 0.05, first_try_pass: 1 });
+    step(b.id, "glm", 0, recent, true);
+    // c: no check commands (SKIPPED), role docs
+    const c = task(session.id, project.id, "docs", recent);
+    repos.startModelRun(c.id, { model: "9router/glm", routed_by: "rules" });
+    repos.updateTask(c.id, { quality_status: "SKIPPED", cost_usd: 0.01 });
+    step(c.id, "glm", 0.01, recent);
+    // d: old task, e: another project
+    const d = task(session.id, project.id, "code", old);
+    step(d.id, "glm", 5, old);
+    const e = task(s2.id, p2.id, "code", recent);
+    step(e.id, "glm", 7, recent);
+
+    const all = repos.usageTotals({ since: null });
+    expect(all.cost).toBeCloseTo(12.31);
+    expect(all.tasks).toBe(5);
+    const week = { projectId: project.id, since: "2026-11-20T00:00:00Z" };
+    expect(repos.usageTotals(week)).toMatchObject({
+      steps: 4,
+      unknown_steps: 1,
+      input: 4000,
+      cache_read: 1600,
+      tasks: 3,
+      unchecked_tasks: 1,
+    });
+    expect(repos.usageTotals(week).cost).toBeCloseTo(0.31);
+    expect(repos.usageTotals({ sessionId: other.id, since: null })).toMatchObject({
+      steps: 1,
+      tasks: 1,
+    });
+
+    const cost = repos.usageCostBy("model", week);
+    expect(cost.map((r) => [r.key, r.steps, r.unknown_steps])).toEqual([
+      ["9router/deepseek", 1, 0],
+      ["9router/glm", 3, 1],
+    ]);
+    const models = Object.fromEntries(repos.usageTasksBy("model", week).map((r) => [r.key, r]));
+    // glm: tasks a, b, c; checked first runs a (FAIL) and b (PASS), c is SKIPPED (D-215)
+    expect(models["9router/glm"]).toMatchObject({
+      tasks: 3,
+      first_try_checked: 2,
+      first_try_pass: 1,
+      pass_tasks: 1,
+    });
+    expect(models["9router/glm"]?.pass_cost).toBeCloseTo(0.05);
+    // deepseek finished task a: the final PASS counts for the last model only
+    expect(models["9router/deepseek"]).toMatchObject({
+      tasks: 1,
+      first_try_checked: 0,
+      pass_tasks: 1,
+    });
+    const roles = Object.fromEntries(repos.usageTasksBy("role", week).map((r) => [r.key, r]));
+    expect(roles.code).toMatchObject({
+      tasks: 2,
+      first_try_checked: 2,
+      first_try_pass: 1,
+      pass_tasks: 2,
+    });
+    expect(roles.docs).toMatchObject({ tasks: 1, first_try_checked: 0, pass_tasks: 0 });
+    const roleCost = repos.usageCostBy("role", week);
+    expect(roleCost.map((r) => r.key)).toEqual(["code", "docs"]);
   });
 
   it("records questions: rounds, one open at a time, answer, close, per-session view", () => {

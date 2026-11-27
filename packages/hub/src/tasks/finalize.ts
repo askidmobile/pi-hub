@@ -16,15 +16,27 @@ export const SUMMARY_FOLLOW_UP =
 const INCOMPLETE_RE =
   /\b(TODO|FIXME|partially|not finished|could not|couldn't|unable to)\b|не успел|частично|не удалось/i;
 
+/**
+ * The SUMMARY line, plain or in markdown (plan PD-209): `SUMMARY:`, `**SUMMARY:**`,
+ * `**SUMMARY**:`, `SUMMARY**:`, `## SUMMARY`, `## Summary`.
+ */
+const SUMMARY_LINE_RE =
+  /^[ \t]*(?:(?:\*\*|__)?SUMMARY(?:\*\*|__)?[ \t]*:(?:\*\*|__)?|#{1,6}[ \t]*(?:\*\*)?summary(?:\*\*)?[ \t]*:?[ \t]*$)/im;
+const PLAIN_SUMMARY_RE = /^[ \t]*(?:\*\*|__)?SUMMARY(?:\*\*|__)?[ \t]*:(?:\*\*|__)?/m;
+
+function summaryMatch(text: string): RegExpExecArray | null {
+  return PLAIN_SUMMARY_RE.exec(text) ?? SUMMARY_LINE_RE.exec(text);
+}
+
 export function hasSummaryBlock(text: string | null): boolean {
-  return !!text && /^\s*SUMMARY:/m.test(text);
+  return !!text && summaryMatch(text) !== null;
 }
 
 /** Text from the SUMMARY line on (or the whole text), collapsed and cut to 500 chars. */
 export function extractSummary(text: string | null): string {
   if (!text) return "";
-  const m = /^\s*SUMMARY:\s*([\s\S]*)$/m.exec(text);
-  const body = (m ? (m[1] ?? "") : text).trim();
+  const m = summaryMatch(text);
+  const body = (m ? text.slice(m.index + m[0].length) : text).trim();
   const compact = body
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -44,7 +56,11 @@ export function looksIncomplete(text: string | null): boolean {
   return !!text && INCOMPLETE_RE.test(text);
 }
 
-/** Asks the worker for a summary once; returns the final assistant text. */
+/**
+ * Asks the worker for a summary once; returns the final assistant text. The agent is idle
+ * here, so this is a new `prompt`: Pi only queues a `follow_up` sent after `agent_settled`
+ * and never runs it (plan PD-209).
+ */
 export async function ensureSummary(
   client: PiRpcClient,
   timeoutMs = 120_000,
@@ -52,7 +68,7 @@ export async function ensureSummary(
   let text = await client.getLastAssistantText();
   if (hasSummaryBlock(text)) return text;
   const settled = client.waitSettled();
-  await client.followUp(SUMMARY_FOLLOW_UP);
+  await client.prompt(SUMMARY_FOLLOW_UP);
   await Promise.race([
     settled,
     new Promise((_, reject) =>

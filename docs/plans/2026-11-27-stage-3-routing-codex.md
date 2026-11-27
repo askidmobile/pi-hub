@@ -166,11 +166,14 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 - **Independent check:** итоги записаны в «Plan decisions» (PD-208…), фикстуры в репозитории без ключа.
 
 ### Phase 1: Данные, протокол, конфиг (estimate: 5 h)
-- [ ] Итог воркера (PD-209): распознавать `SUMMARY:` в разметке (`**SUMMARY:**`, `## SUMMARY`, `SUMMARY**:`); досрочную просьбу об итоге отправлять `prompt`, а не `follow_up`; фейковый воркер — `follow_up` после остановки только ставит в очередь, как Pi; сценарий с итогом в разметке → `tasks/finalize.ts`, `packages/fake-worker/src/index.ts`
-- [ ] Миграция `005_routing.sql` + методы `repos.ts` (прогоны моделей, `first_try_pass`, `steps.kind`, запросы отчёта)
-- [ ] [P] Протокол: `usage_report` в списке инструментов, `models` в конверте, тип `UsageReport` → `packages/protocol/src/*`
-- [ ] [P] Конфиг: `RoleRule.description`, пресеты System One → `config/schema.ts`, `router/system-one/presets.ts`
-- [ ] Тесты: миграция на БД этапа 2 (прошлые задачи получают один прогон), запросы отчёта по фильтрам
+- [x] Итог воркера (PD-209): распознавать `SUMMARY:` в разметке (`**SUMMARY:**`, `## SUMMARY`, `SUMMARY**:`); досрочную просьбу об итоге отправлять `prompt`, а не `follow_up`; фейковый воркер — `follow_up` после остановки только ставит в очередь, как Pi; сценарий с итогом в разметке → `tasks/finalize.ts`, `packages/fake-worker/src/index.ts`
+- [x] Миграция `005_routing.sql` + методы `repos.ts` (прогоны моделей, `first_try_pass`, `steps.kind`, запросы отчёта)
+- [x] [P] Протокол: `usage_report` в списке инструментов, `models` в конверте, тип `UsageReport` → `packages/protocol/src/*`
+- [x] [P] Конфиг: `RoleRule.description`, пресеты System One → `config/schema.ts`, `router/system-one/presets.ts`
+- [x] Тесты: миграция на БД этапа 2 (прошлые задачи получают один прогон), запросы отчёта по фильтрам
+- deviated: `router/system-one/presets.ts` уже был (заготовка этапа 0) — добавлены пресет `9router` и поле `defaultModel`; конфиг заполняет `url`, `api_key_env`, `model` из пресета (`custom` требует `url` и `model`), имя переменной ключа проверяется.
+- deviated: `models` в конверте подключён сразу (`task-service.result` берёт прогоны из `task_model_runs`; пока прогонов нет — модель задачи). Регистрация `usage_report` в фасаде — фаза 3, как в плане.
+- deviated: «PASS с первого раза» для прошлых задач не восстанавливается (авто-круг этапа 2 не записан) — `first_try_pass = NULL`, такие задачи не входят в долю.
 - **Independent check:** `pnpm test`, `pnpm typecheck` зелёные; БД этапа 2 мигрирует.
 
 ### Phase 2: Эскалация (estimate: 8 h)
@@ -222,12 +225,12 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 
 | Requirement | Phase | Tasks |
 |-------------|-------|-------|
-| FR-201 | 1, 4, 7 | `RoleRule.description`, `escalate`; `doctor` о моделях ролей |
+| FR-201 | 1, 4, 7 | `RoleRule.description`, `escalate`; `doctor` о моделях ролей — 🔶 описание роли (фаза 1) |
 | FR-202 | 2 | эскалация в `WorkerRun`, `escalation.ts` |
 | FR-203 | 2 | исключения эскалации |
 | FR-204 | 2 | `models`, предупреждение, `routed_by = escalation` |
-| FR-205 | 1, 2 | `task_model_runs`, `first_try_pass` |
-| FR-206 | 1, 3 | запросы отчёта, `usage-report.ts`, фасад |
+| FR-205 | 1, 2 | `task_model_runs`, `first_try_pass` — 🔶 хранение (фаза 1) |
+| FR-206 | 1, 3 | запросы отчёта, `usage-report.ts`, фасад — 🔶 запросы и тип (фаза 1) |
 | FR-207 | 0, 5 | профиль Codex |
 | FR-208 | 5 | `init` + `codex-profile.ts` |
 | FR-209 | 5 | хук Stop `--client codex` |
@@ -235,7 +238,7 @@ INSERT INTO task_model_runs (seq = 1) SELECT … FROM tasks  -- прошлые �
 | FR-211 | 6 | эталонные задачи |
 | FR-212 | 6 | `scripts/bench.ts` |
 | FR-220 | 4 | `RoleRouter`, адаптер |
-| FR-221 | 1, 4 | пресеты |
+| FR-221 | 1, 4 | пресеты — 🔶 данные и конфиг (фаза 1) |
 | FR-222 | 4 | шаг роутера в учёте |
 | FR-223 | 4 | `init` роутер |
 | FR-224 | 4 | `router status/test/off`, `doctor` |

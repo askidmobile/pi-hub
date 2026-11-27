@@ -205,6 +205,7 @@ export class TaskService extends EventEmitter<TaskServiceEvents> {
       sessionUnknownSteps: this.deps.accounting.sessionUnknownSteps(sessionId),
       changedFiles: changed,
       questions: this.deps.repos.countQuestions(task.id),
+      models: this.deps.repos.modelRuns(task.id).map((r) => r.model),
     });
   }
 

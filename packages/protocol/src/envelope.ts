@@ -29,6 +29,8 @@ export interface ResultEnvelope {
   /** Rework round: 1 for the first run, +1 for every `send` on a finished task. */
   attempt: number;
   questions: { asked: number; answered: number };
+  /** Models that worked on the task, in order; more than one after escalation (stage 3 FR-204). */
+  models: string[];
 }
 
 /** One row of `status`: enough to decide what to wait for, nothing more. */
@@ -66,4 +68,44 @@ export interface OpenQuestion {
 /** Appended to every tool response for the owning session (stage 2 spec FR-107). No budgets (BD-021). */
 export interface ResponseFooter {
   pending_questions?: { task_id: string; count: number }[];
+}
+
+/** Price of a report line: a sum, or `"unknown"` when every step of it has an unknown price. */
+export type ReportCost = number | "unknown";
+
+/** One line of a `usage_report` breakdown (stage 3 FR-206, D-209). */
+export interface UsageReportRow {
+  /** `provider/model` or the role name. */
+  name: string;
+  tasks: number;
+  cost_usd: ReportCost;
+  /** Steps with an unknown price, not counted in `cost_usd`; only when > 0. */
+  unknown_price_steps?: number;
+  /** Share of checked tasks that passed on the first model's first check; null: none checked (D-215). */
+  first_try_pass_share: number | null;
+  /** Average cost of a task with the final PASS; null: no such task. */
+  avg_cost_pass: number | null;
+}
+
+/** `usage_report`: totals and breakdowns by model and by role, at most 2 KB (stage 3 FR-206). */
+export interface UsageReport {
+  scope: "session" | "project" | "all";
+  period: "day" | "week" | "month" | "all";
+  /** ISO start of the period; null for `all`. */
+  since: string | null;
+  total: {
+    cost_usd: number;
+    /** Steps with an unknown price, not counted in `cost_usd`; only when > 0. */
+    unknown_price_steps?: number;
+    input: number;
+    output: number;
+    cached_share: number;
+    tasks: number;
+    /** Tasks without check commands (SKIPPED): outside the PASS shares (D-215). */
+    unchecked_tasks: number;
+  };
+  by_model: UsageReportRow[];
+  by_role: UsageReportRow[];
+  /** Lines cut to fit 2 KB, the most expensive kept. */
+  more?: { models?: number; roles?: number };
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { findPreset } from "../router/system-one/presets.js";
 
 /** Pi version the hub is tested against (ADR-0004). Upgrade only after adapter tests pass. */
 export const PINNED_PI_VERSION = "1.6.1";
@@ -10,7 +11,49 @@ export const RoleRule = z.object({
   model: ModelRef,
   fallback: z.array(ModelRef).optional(),
   escalate: z.array(ModelRef).optional(),
+  /** One line for the smart router: what tasks this role takes (stage 3 FR-201). */
+  description: z.string().max(300).optional(),
 });
+
+/**
+ * System One endpoint (stage 3 FR-221): a preset fills `url`, `api_key_env` and `model`;
+ * the config may override each. `custom` (or an unknown preset) needs `url` and `model`.
+ * The key itself lives only in `~/.pi-hub/.env` under `api_key_env`.
+ */
+export const SystemOneConfig = z
+  .object({
+    preset: z.string().default("custom"),
+    url: z.string().url().optional(),
+    api_key_env: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "expected an environment variable name")
+      .optional(),
+    model: z.string().min(1).optional(),
+    timeout_ms: z.number().int().positive().default(3000),
+    min_confidence: z.number().min(0).max(1).default(0.75),
+  })
+  .transform((c, ctx) => {
+    const preset = findPreset(c.preset);
+    if (!preset) {
+      ctx.addIssue({ code: "custom", path: ["preset"], message: `unknown preset "${c.preset}"` });
+      return z.NEVER;
+    }
+    const url = c.url ?? (preset.url || undefined);
+    const model = c.model ?? preset.defaultModel;
+    if (!url) ctx.addIssue({ code: "custom", path: ["url"], message: "url is required" });
+    if (!model) ctx.addIssue({ code: "custom", path: ["model"], message: "model is required" });
+    if (!url || !model) return z.NEVER;
+    const api_key_env = c.api_key_env ?? preset.apiKeyEnv;
+    return {
+      preset: c.preset,
+      url,
+      model,
+      ...(api_key_env ? { api_key_env } : {}),
+      timeout_ms: c.timeout_ms,
+      min_confidence: c.min_confidence,
+    };
+  });
+export type SystemOneConfig = z.infer<typeof SystemOneConfig>;
 
 const ClientRule = z.object({
   tool_list: z.enum(["dynamic", "static"]),
@@ -74,16 +117,7 @@ export const HubConfig = z
     router: z
       .object({
         smart: z.boolean().default(false),
-        system_one: z
-          .object({
-            preset: z.string(),
-            url: z.string().url(),
-            api_key_env: z.string().optional(),
-            model: z.string(),
-            timeout_ms: z.number().int().positive().default(3000),
-            min_confidence: z.number().min(0).max(1).default(0.75),
-          })
-          .optional(),
+        system_one: SystemOneConfig.optional(),
       })
       .prefault({}),
   })

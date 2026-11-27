@@ -61,6 +61,8 @@ export interface TaskRow {
   base_commit: string | null;
   quality_issues_json: string;
   quality_log_path: string | null;
+  /** 1 / 0 / NULL: the first model passed its first check (stage 3 FR-205, D-215). */
+  first_try_pass: number | null;
 }
 
 /** Columns a caller may change after insert. `id`, `owner_session_id`, `project_id`, `created_at` are fixed. */
@@ -93,6 +95,53 @@ export interface StepInput {
   price_json?: string | null;
   latency_ms?: number | null;
   tool_name?: string | null;
+  /** `router` for a System One request (stage 3 FR-222); `worker` by default. */
+  kind?: "worker" | "router";
+}
+
+/** One model's turn on a task (stage 3 FR-205). */
+export interface ModelRunRow {
+  task_id: string;
+  seq: number;
+  model: string;
+  routed_by: RoutedBy;
+  reason: string | null;
+  started_at: string;
+  finished_at: string | null;
+  quality: QualityStatus | null;
+}
+
+/**
+ * What a usage report covers (stage 3 FR-206): tasks of one session, of one project or all;
+ * steps from `since` on, tasks created from `since` on (`null` = everything).
+ */
+export interface UsageFilter {
+  sessionId?: string;
+  projectId?: string;
+  since: string | null;
+}
+
+/** Step totals of one model or role. `key` is `provider/model` or the role (NULL → ""). */
+export interface UsageCostRow {
+  key: string;
+  steps: number;
+  unknown_steps: number;
+  cost: number;
+  input: number;
+  output: number;
+  cache_read: number;
+}
+
+/** Task counts of one model or role for the PASS shares (D-215: SKIPPED is left out). */
+export interface UsageTaskRow {
+  key: string;
+  tasks: number;
+  /** Tasks whose first run was checked (PASS or FAIL): the share's denominator. */
+  first_try_checked: number;
+  first_try_pass: number;
+  /** Tasks with the final PASS (for a model: it was the last model of the task). */
+  pass_tasks: number;
+  pass_cost: number;
 }
 
 /** Where a step's cost comes from, most accurate first (stage 2 FR-116). */
@@ -171,6 +220,7 @@ const TASK_PATCHABLE = new Set<keyof TaskPatch>([
   "base_commit",
   "quality_issues_json",
   "quality_log_path",
+  "first_try_pass",
 ]);
 
 /** Deterministic project id: the same repository always maps to the same row. */
@@ -464,8 +514,9 @@ export class Repos {
       .prepare(
         `INSERT INTO steps
            (task_id, seq, model, provider, input_tokens, output_tokens, cache_read_tokens,
-            cache_write_tokens, cost, cost_source, price_json, latency_ms, tool_name, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            cache_write_tokens, cost, cost_source, price_json, latency_ms, tool_name, kind,
+            created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         step.task_id,
@@ -481,6 +532,7 @@ export class Repos {
         step.price_json ?? null,
         step.latency_ms ?? null,
         step.tool_name ?? null,
+        step.kind ?? "worker",
         now(),
       );
   }
@@ -519,4 +571,133 @@ export class Repos {
       .get(seniorSessionId) as { cost: number };
     return row.cost;
   }
+
+  // --- model runs (stage 3 FR-205) ---
+
+  /** Opens the next run of the task; returns its `seq`. */
+  startModelRun(
+    taskId: string,
+    run: { model: string; routed_by: RoutedBy; reason?: string | null },
+  ): number {
+    const row = this.db
+      .prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM task_model_runs WHERE task_id = ?")
+      .get(taskId) as { seq: number };
+    this.db
+      .prepare(
+        `INSERT INTO task_model_runs (task_id, seq, model, routed_by, reason, started_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(taskId, row.seq, run.model, run.routed_by, run.reason ?? null, now());
+    return row.seq;
+  }
+
+  finishModelRun(taskId: string, seq: number, quality: QualityStatus | null): void {
+    this.db
+      .prepare(
+        "UPDATE task_model_runs SET finished_at = ?, quality = ? WHERE task_id = ? AND seq = ?",
+      )
+      .run(now(), quality, taskId, seq);
+  }
+
+  modelRuns(taskId: string): ModelRunRow[] {
+    return this.db
+      .prepare("SELECT * FROM task_model_runs WHERE task_id = ? ORDER BY seq")
+      .all(taskId) as unknown as ModelRunRow[];
+  }
+
+  setFirstTryPass(taskId: string, pass: boolean | null): void {
+    this.updateTask(taskId, { first_try_pass: pass === null ? null : pass ? 1 : 0 });
+  }
+
+  // --- usage report (stage 3 FR-206) ---
+
+  /** Totals of the filter: steps of the period, tasks created in it, unchecked tasks. */
+  usageTotals(f: UsageFilter): UsageTotals & { tasks: number; unchecked_tasks: number } {
+    const steps = usageWhere(f, "s.created_at");
+    const totals = this.db
+      .prepare(
+        `SELECT COUNT(*) AS steps, COALESCE(SUM(s.cost_source = 'unknown'), 0) AS unknown_steps,
+                COALESCE(SUM(s.cost), 0) AS cost,
+                COALESCE(SUM(s.input_tokens), 0) AS input,
+                COALESCE(SUM(s.output_tokens), 0) AS output,
+                COALESCE(SUM(s.cache_read_tokens), 0) AS cache_read,
+                COALESCE(SUM(s.cache_write_tokens), 0) AS cache_write
+         FROM steps s JOIN tasks t ON t.id = s.task_id WHERE ${steps.sql}`,
+      )
+      .get(...steps.args) as unknown as UsageTotals;
+    const tasks = usageWhere(f, "t.created_at");
+    const counts = this.db
+      .prepare(
+        `SELECT COUNT(*) AS tasks, COALESCE(SUM(t.quality_status = 'SKIPPED'), 0) AS unchecked_tasks
+         FROM tasks t WHERE ${tasks.sql}`,
+      )
+      .get(...tasks.args) as { tasks: number; unchecked_tasks: number };
+    return { ...totals, ...counts };
+  }
+
+  /** Step totals per model (`provider/model` of the step) or per role of the task. */
+  usageCostBy(dim: "model" | "role", f: UsageFilter): UsageCostRow[] {
+    const w = usageWhere(f, "s.created_at");
+    const key = dim === "model" ? "s.provider || '/' || s.model" : "COALESCE(t.role, '')";
+    return this.db
+      .prepare(
+        `SELECT ${key} AS key, COUNT(*) AS steps,
+                COALESCE(SUM(s.cost_source = 'unknown'), 0) AS unknown_steps,
+                COALESCE(SUM(s.cost), 0) AS cost,
+                COALESCE(SUM(s.input_tokens), 0) AS input,
+                COALESCE(SUM(s.output_tokens), 0) AS output,
+                COALESCE(SUM(s.cache_read_tokens), 0) AS cache_read
+         FROM steps s JOIN tasks t ON t.id = s.task_id WHERE ${w.sql}
+         GROUP BY key ORDER BY cost DESC, steps DESC`,
+      )
+      .all(...w.args) as unknown as UsageCostRow[];
+  }
+
+  /**
+   * Task counts per model (every model that ran on the task; first-try share by the first
+   * run, final PASS by the last run) or per role, for tasks created in the period.
+   */
+  usageTasksBy(dim: "model" | "role", f: UsageFilter): UsageTaskRow[] {
+    const w = usageWhere(f, "t.created_at");
+    const sql =
+      dim === "role"
+        ? `SELECT COALESCE(t.role, '') AS key, COUNT(*) AS tasks,
+                  COALESCE(SUM(t.first_try_pass IS NOT NULL), 0) AS first_try_checked,
+                  COALESCE(SUM(t.first_try_pass = 1), 0) AS first_try_pass,
+                  COALESCE(SUM(t.quality_status = 'PASS'), 0) AS pass_tasks,
+                  COALESCE(SUM(CASE WHEN t.quality_status = 'PASS' THEN t.cost_usd END), 0)
+                    AS pass_cost
+           FROM tasks t WHERE ${w.sql} GROUP BY key`
+        : `SELECT r.model AS key, COUNT(DISTINCT r.task_id) AS tasks,
+                  COALESCE(SUM(r.seq = 1 AND t.first_try_pass IS NOT NULL), 0) AS first_try_checked,
+                  COALESCE(SUM(r.seq = 1 AND t.first_try_pass = 1), 0) AS first_try_pass,
+                  COALESCE(SUM(r.seq = last.seq AND t.quality_status = 'PASS'), 0) AS pass_tasks,
+                  COALESCE(SUM(CASE WHEN r.seq = last.seq AND t.quality_status = 'PASS'
+                                    THEN t.cost_usd END), 0) AS pass_cost
+           FROM task_model_runs r
+           JOIN tasks t ON t.id = r.task_id
+           JOIN (SELECT task_id, MAX(seq) AS seq FROM task_model_runs GROUP BY task_id) last
+             ON last.task_id = r.task_id
+           WHERE ${w.sql} GROUP BY key`;
+    return this.db.prepare(sql).all(...w.args) as unknown as UsageTaskRow[];
+  }
+}
+
+/** WHERE clause of a usage filter; `timeColumn` is the column `since` applies to. */
+function usageWhere(f: UsageFilter, timeColumn: string): { sql: string; args: string[] } {
+  const parts: string[] = ["1 = 1"];
+  const args: string[] = [];
+  if (f.sessionId) {
+    parts.push("t.owner_session_id = ?");
+    args.push(f.sessionId);
+  }
+  if (f.projectId) {
+    parts.push("t.project_id = ?");
+    args.push(f.projectId);
+  }
+  if (f.since) {
+    parts.push(`${timeColumn} >= ?`);
+    args.push(f.since);
+  }
+  return { sql: parts.join(" AND "), args };
 }

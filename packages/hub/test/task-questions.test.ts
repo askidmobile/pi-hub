@@ -95,9 +95,9 @@ describe("TaskService questions (fake worker)", () => {
     const done = await waitFor(s.task_id);
     expect(done.status).toBe("done");
     expect(fileOnBranch(s.task_id, "named.txt")).toBe("b.txt");
-    // the SUMMARY follow-up (FR-026) was not sent for the question
+    // the SUMMARY request (FR-026) was not sent for the question: two prompts, task + answer
     const log = readFileSync(h.repos.getTask(s.task_id)?.log_path as string, "utf8");
-    expect(log).not.toContain('"command":"follow_up"');
+    expect(log.match(/"command":"prompt"/g)).toHaveLength(2);
   });
 
   it("clarify: plan as a question with no changes, send moves to running (FR-125)", async () => {

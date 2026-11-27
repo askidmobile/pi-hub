@@ -2,6 +2,7 @@ import type { OpenQuestion } from "@pi-hub/protocol";
 import { z } from "zod";
 import type { ExtensionUiRequest } from "../pi-rpc/events.js";
 import { parseJsonList, type QuestionRow } from "../storage/repos.js";
+import { hasSummaryBlock } from "./finalize.js";
 
 /**
  * Worker questions (stage 2 spec FR-101..FR-106, FR-120, plan PD-103/PD-104).
@@ -53,7 +54,7 @@ export function parseAskDialog(req: ExtensionUiRequest): AskDialog | null {
  * paragraph ends with "?". Returns that paragraph.
  */
 export function detectTextQuestion(finalText: string | null): string | null {
-  if (!finalText || /^\s*SUMMARY:/m.test(finalText)) return null;
+  if (!finalText || hasSummaryBlock(finalText)) return null;
   const paragraphs = finalText
     .trim()
     .split(/\n\s*\n/)

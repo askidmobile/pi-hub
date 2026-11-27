@@ -23,8 +23,16 @@ export const UsageReportInput = z.object({
 });
 export const ArchitectModeInput = z.object({ mode: z.enum(["on", "off"]) });
 
-/** Delegation tools (stage 1 FR-007). `usage_report` arrives in stage 3. */
-export const DELEGATION_TOOLS = ["start", "wait", "status", "result", "cancel", "send"] as const;
+/** Delegation tools (stage 1 FR-007; `usage_report` — stage 3 FR-206). */
+export const DELEGATION_TOOLS = [
+  "start",
+  "wait",
+  "status",
+  "result",
+  "cancel",
+  "send",
+  "usage_report",
+] as const;
 export type DelegationTool = (typeof DELEGATION_TOOLS)[number];
 export const ALWAYS_VISIBLE_TOOLS = ["architect_mode"] as const;
 
@@ -37,4 +45,5 @@ export const TOOL_DESCRIPTIONS: Record<DelegationTool | "architect_mode", string
   result: "Final envelope of a task: summary, assumptions, branch, changed files, cost, warnings.",
   cancel: "Stop a task. Its worktree and branch are kept.",
   send: "Answer a worker question, or send a finished/failed/interrupted task back for more work.",
+  usage_report: "Worker spending by model and role for a session, project or all, over a period.",
 };

@@ -33,6 +33,7 @@ export const SCENARIOS = [
   "quality-broken",
   "skip-test",
   "zero-cost",
+  "markdown-summary",
 ] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
@@ -200,6 +201,12 @@ async function runScenario(): Promise<void> {
         assistant("I could not fix it.\n\nSUMMARY:\n- The check still fails.", 0.001);
       }
       break;
+    case "markdown-summary":
+      // gpt-oss style: the summary line is bold markdown (plan PD-209)
+      writeHello();
+      commitFile("md.txt", "md\n", "Add hello.txt and md.txt");
+      assistant("All done.\n\n**SUMMARY:**\n- Added hello.txt and md.txt.", 0.001);
+      break;
     case "zero-cost":
       // a provider without prices: Pi reports cost 0 (stage 2 FR-116)
       writeHello();
@@ -302,14 +309,18 @@ async function handle(cmd: { id?: string; type?: string; [k: string]: unknown })
     case "prompt":
       lastPrompt = String(cmd.message ?? "");
       respond(id, type, { disposition: "started" });
+      if (lastPrompt.startsWith("Write your final summary now")) {
+        running = true;
+        out({ type: "agent_start" });
+        assistant("SUMMARY:\n- Added hello.txt and committed it.", 0.0005, 300, 20);
+        settle();
+        return;
+      }
       void runScenario();
       return;
     case "follow_up":
+      // like Pi: after agent_settled a follow-up is only queued and never runs on its own
       respond(id, type, { disposition: "queued" });
-      running = true;
-      out({ type: "agent_start" });
-      assistant("SUMMARY:\n- Added hello.txt and committed it.", 0.0005, 300, 20);
-      settle();
       return;
     case "get_last_assistant_text":
       respond(id, type, { text: lastText });

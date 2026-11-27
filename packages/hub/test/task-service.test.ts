@@ -58,8 +58,20 @@ describe("TaskService (fake worker)", () => {
     const env = await h.service.result(h.sessionId, s.task_id);
     expect(env.summary).toContain("Added hello.txt");
     const log = readFileSync(env.log_path, "utf8");
-    // exactly one follow-up was sent (its response is in the task log)
-    expect(log.match(/"command":"follow_up"/g)).toHaveLength(1);
+    // the request is a second prompt, not a follow_up Pi would only queue (PD-209)
+    expect(log.match(/"command":"prompt"/g)).toHaveLength(2);
+    expect(log).not.toContain('"command":"follow_up"');
+  });
+
+  it("takes a markdown SUMMARY without asking again (PD-209)", async () => {
+    const s = await start(h, "fake/markdown-summary");
+    await h.service.waitFor(h.sessionId, s.task_id, 15_000);
+    const env = await h.service.result(h.sessionId, s.task_id);
+    expect(env.status).toBe("done");
+    expect(env.summary).toBe("- Added hello.txt and md.txt.");
+    expect(env.warnings).not.toContain("воркер не написал итог");
+    const log = readFileSync(env.log_path, "utf8");
+    expect(log.match(/"command":"prompt"/g)).toHaveLength(1);
   });
 
   it("commits leftovers and warns (FR-016)", async () => {
@@ -239,6 +251,19 @@ describe("summary helpers", () => {
   it("extracts and caps the SUMMARY block", () => {
     expect(hasSummaryBlock("text\nSUMMARY:\n- a")).toBe(true);
     expect(hasSummaryBlock("no summary here")).toBe(false);
+    for (const md of [
+      "**SUMMARY:**\n- a",
+      "**SUMMARY**:\n- a",
+      "SUMMARY**:\n- a",
+      "## SUMMARY\n- a",
+      "### Summary:\n- a",
+      "__SUMMARY:__ - a",
+    ]) {
+      expect(hasSummaryBlock(`Done.\n\n${md}`), md).toBe(true);
+      expect(extractSummary(`Done.\n\n${md}`), md).toBe("- a");
+    }
+    expect(hasSummaryBlock("In summary: it works")).toBe(false);
+    expect(hasSummaryBlock("The SUMMARY: line comes later")).toBe(false);
     expect(extractSummary("blah\n\nSUMMARY:\n- a\n\n- b")).toBe("- a\n- b");
     expect(extractSummary(`SUMMARY:\n${"x".repeat(900)}`).length).toBe(500);
     expect(looksIncomplete("Частично сделано")).toBe(true);

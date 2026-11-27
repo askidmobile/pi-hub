@@ -26,6 +26,8 @@ export function buildEnvelope(input: {
   sessionUnknownSteps?: number;
   changedFiles: string[];
   questions?: { asked: number; answered: number };
+  /** Models of the task's runs in order (stage 3 FR-204); default: the task's model. */
+  models?: string[];
 }): ResultEnvelope {
   return fitEnvelope(rawEnvelope(input));
 }
@@ -61,6 +63,8 @@ function rawEnvelope(input: {
   sessionUnknownSteps?: number;
   changedFiles: string[];
   questions?: { asked: number; answered: number };
+  /** Models of the task's runs in order (stage 3 FR-204); default: the task's model. */
+  models?: string[];
 }): ResultEnvelope {
   const { task, usage } = input;
   const warnings = parseJsonList(task.warnings_json);
@@ -93,6 +97,7 @@ function rawEnvelope(input: {
     warnings,
     attempt: task.attempt,
     questions: input.questions ?? { asked: 0, answered: 0 },
+    models: input.models?.length ? input.models : task.model ? [task.model] : [],
   };
 }
 

@@ -11,6 +11,8 @@ export interface SystemOnePreset {
   dialect: Dialect;
   apiKeyEnv?: string; // undefined = no key needed
   models: string[];
+  /** Model used when the config names none; undefined = the user must pick one. */
+  defaultModel?: string;
 }
 
 export const SYSTEM_ONE_PRESETS: readonly SystemOnePreset[] = [
@@ -22,6 +24,18 @@ export const SYSTEM_ONE_PRESETS: readonly SystemOnePreset[] = [
     dialect: "systemone",
     apiKeyEnv: "TYPESAFE_API_KEY",
     models: ["jev-latest", "jev-1.14.0", "jev-1.13.0", "jev-preview"],
+    defaultModel: "jev-latest",
+  },
+  {
+    // The 9router gateway: Jev and Clef behind one key (stage 3 FR-221, D-205, PD-207, PD-210).
+    // `jev-latest` follows new Jev versions; the step records the actual model (jev-1.14.0).
+    id: "9router",
+    label: "9router (TypeSafe Jev, Ollama Clef)",
+    url: "https://omni-fr.archteam.org/v1/systemone",
+    dialect: "systemone",
+    apiKeyEnv: "NINEROUTER_API_KEY",
+    models: ["typesafe/jev-latest", "ollama/clef-flash"],
+    defaultModel: "typesafe/jev-latest",
   },
   {
     id: "openrouter",
@@ -30,6 +44,7 @@ export const SYSTEM_ONE_PRESETS: readonly SystemOnePreset[] = [
     dialect: "systemone",
     apiKeyEnv: "OPENROUTER_API_KEY",
     models: ["typesafe/jev-latest", "typesafe/jev-1.13"],
+    defaultModel: "typesafe/jev-latest",
   },
   {
     id: "aimlapi",
@@ -45,6 +60,7 @@ export const SYSTEM_ONE_PRESETS: readonly SystemOnePreset[] = [
     url: "http://localhost:11434/v1/systemone",
     dialect: "systemone",
     models: ["nimble"],
+    defaultModel: "nimble",
   },
   {
     id: "ollama-cloud",
@@ -78,3 +94,7 @@ export const SYSTEM_ONE_PRESETS: readonly SystemOnePreset[] = [
     models: [],
   },
 ];
+
+export function findPreset(id: string): SystemOnePreset | undefined {
+  return SYSTEM_ONE_PRESETS.find((p) => p.id === id);
+}

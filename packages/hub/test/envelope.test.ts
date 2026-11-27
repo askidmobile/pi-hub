@@ -32,6 +32,7 @@ const task: TaskRow = {
   base_commit: "0123456789abcdef0123456789abcdef01234567",
   quality_issues_json: "[]",
   quality_log_path: null,
+  first_try_pass: null,
 };
 
 const usage = {
@@ -51,6 +52,18 @@ describe("result envelope size", () => {
     const env = buildEnvelope({ task, usage, sessionTotalUsd: 0.31, changedFiles: files });
     expect(env.changed_files).toHaveLength(20);
     expect(Buffer.byteLength(JSON.stringify(env))).toBeLessThanOrEqual(2048);
+    expect(env.models).toEqual(task.model ? [task.model] : []);
+  });
+
+  it("lists the models of the task's runs in order (stage 3 FR-204)", () => {
+    const env = buildEnvelope({
+      task,
+      usage,
+      sessionTotalUsd: 0,
+      changedFiles: [],
+      models: ["9router/glm-5.3-flash", "9router/Deepseek-v4.1-flash"],
+    });
+    expect(env.models).toEqual(["9router/glm-5.3-flash", "9router/Deepseek-v4.1-flash"]);
   });
 
   it("stays within 2 KB with a FAIL verdict of 10 x 200 issues (FR-127)", () => {
