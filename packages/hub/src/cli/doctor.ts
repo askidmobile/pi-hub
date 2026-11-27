@@ -123,7 +123,10 @@ export async function runDoctor(
   checks.push(
     shim
       ? ok("pi-hub-shim", shim)
-      : warn("pi-hub-shim", "нет в PATH: выполните pnpm build && pnpm link:bins в репозитории pi-hub"),
+      : warn(
+          "pi-hub-shim",
+          "нет в PATH: выполните pnpm build && pnpm link:bins в репозитории pi-hub",
+        ),
   );
   checks.push(await hookCheck(env, shim));
 
