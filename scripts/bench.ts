@@ -189,6 +189,28 @@ function readRaw(file: string): RunRecord[] {
 
 const key = (r: { task: string; model: string; run: number }) => `${r.task}|${r.model}|${r.run}`;
 
+/** `errorMessage` of the assistant messages in the task log (Pi's provider errors). */
+function modelErrors(logPath: string): string {
+  try {
+    return readFileSync(logPath, "utf8")
+      .split("\n")
+      .filter((l) => l.includes('"errorMessage"'))
+      .map((l) => {
+        try {
+          return String(
+            (JSON.parse(l) as { message?: { errorMessage?: string } }).message?.errorMessage ?? "",
+          );
+        } catch {
+          return "";
+        }
+      })
+      .filter((m) => m && m !== "Request aborted")
+      .join("\n");
+  } catch {
+    return "";
+  }
+}
+
 async function main(): Promise<void> {
   const a = args();
   if (!existsSync(SHIM) || !existsSync(join(HUB_DIST, "cli/main.js"))) {
@@ -331,13 +353,13 @@ async function main(): Promise<void> {
       };
       if (env.status !== "done") {
         const reason = warnings.find((w) => w.startsWith("причина:")) ?? String(env.status);
-        let log = "";
-        try {
-          log = readFileSync(String(env.log_path), "utf8").slice(-20_000);
-        } catch {
-          // no log
-        }
-        const provider = PROVIDER_ERROR_RE.test(reason) || PROVIDER_ERROR_RE.test(log);
+        // Only the reason and the model's own error messages: the log also holds file
+        // contents and tool output, where words like "terminated" mean nothing. A task that
+        // ran out of time is the model's result, never a provider error.
+        const provider =
+          !/превышено время|лимит стоимости/.test(reason) &&
+          (PROVIDER_ERROR_RE.test(reason) ||
+            PROVIDER_ERROR_RE.test(modelErrors(String(env.log_path))));
         return { ...base, ...measures, outcome: provider ? "provider_error" : "error", reason };
       }
       const outcome: Outcome =
